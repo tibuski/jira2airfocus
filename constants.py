@@ -3,3 +3,6 @@ JIRA_REST_URL = "https://jiraacc.belgrid.net/rest/api/latest"
 
 # Airfocus REST API URL - https://developer.airfocus.com/endpoints.html#/Items
 AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
+
+# JIRA project to be synced
+JIRA_PROJECT_KEY = "JIRA"
