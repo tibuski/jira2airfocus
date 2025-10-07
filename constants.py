@@ -2,7 +2,7 @@
 # Update this URL to match your JIRA instance
 # Format: https://your-jira-instance.com/rest/api/latest
 # Documentation: https://developer.atlassian.com/server/jira/platform/rest/v11001/intro/#gettingstarted
-JIRA_REST_URL = "https://jiraacc.belgrid.net/rest/api/latest"
+JIRA_REST_URL = "https://jira.brichet.be
 
 # Airfocus Configuration  
 # This URL typically stays the same for all Airfocus instances
