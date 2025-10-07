@@ -5,13 +5,15 @@ This module provides functionality to fetch data from JIRA projects and sync the
 It handles authentication, data retrieval, and logging for the integration process.
 """
 
-import dotenv
+import sys
 import os
 import requests
 import json
 from datetime import datetime
 import urllib3
 import glob
+import dotenv
+
 from loguru import logger
 
 import constants
@@ -29,9 +31,8 @@ logger.add(
     retention="30 days"
 )
 logger.add(
-    lambda msg: print(msg, end=""),  # Console output
+    sys.stderr,
     level=constants.LOGGING_LEVEL,
-    format="<light-blue>{time:YYYY-MM-DD HH:mm:ss}</light-blue> - <bold>{level}</bold> - {message}",
     colorize=True
 )
 
@@ -83,10 +84,29 @@ def get_jira_project_data(project_key):
         }
 
         logger.info("Requesting issues {} to {}", start_at, start_at + max_results - 1)
-        response = requests.post(url, headers=headers, json=query, verify=False)
+        
+        try:
+            response = requests.post(url, headers=headers, json=query, verify=False, timeout=30)
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Connection error while fetching data for Jira project {project_key}: {str(e)}"
+            logger.error("{}", error_msg)
+            return {"error": error_msg}
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Timeout error while fetching data for Jira project {project_key}: {str(e)}"
+            logger.error("{}", error_msg)
+            return {"error": error_msg}
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Request error while fetching data for Jira project {project_key}: {str(e)}"
+            logger.error("{}", error_msg)
+            return {"error": error_msg}
+        except Exception as e:
+            error_msg = f"Unexpected error while fetching data for Jira project {project_key}: {str(e)}"
+            logger.error("{}", error_msg)
+            return {"error": error_msg}
         
         if response.status_code != 200:
-            logger.error("Failed to fetch data for Jira project {}. Status code: {}", project_key, response.status_code)
+            error_msg = f"Failed to fetch data for Jira project {project_key}. Status code: {response.status_code}"
+            logger.error("{}", error_msg)
             logger.error("Response: {}", response.text)
             return {"error": f"Failed to fetch data. Status: {response.status_code}"}
 
