@@ -31,7 +31,8 @@ logger.add(
 logger.add(
     lambda msg: print(msg, end=""),  # Console output
     level=constants.LOGGING_LEVEL,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}"
+    format="<light-blue>{time:YYYY-MM-DD HH:mm:ss}</light-blue> - <bold>{level}</bold> - {message}",
+    colorize=True
 )
 
 # Load environment variables from .env file
