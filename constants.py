@@ -2,7 +2,7 @@
 # Update this URL to match your JIRA instance
 # Format: https://your-jira-instance.com/rest/api/latest
 # Documentation: https://developer.atlassian.com/server/jira/platform/rest/v11001/intro/#gettingstarted
-JIRA_REST_URL = "https://jira.brichet.be
+JIRA_REST_URL = "https://jira.brichet.be/rest/api/latest"
 
 # Airfocus Configuration  
 # This URL typically stays the same for all Airfocus instances
@@ -12,7 +12,7 @@ AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
 # JIRA Project Configuration
 # The project key of the JIRA project you want to sync
 # Example: "PROJ", "DEV", "SUPPORT", etc.
-JIRA_PROJECT_KEY = "JIRA"
+JIRA_PROJECT_KEY = "KAN"
 
 # Airfocus Workspace Configuration
 # Your Airfocus workspace ID (found in the workspace URL)
@@ -25,4 +25,4 @@ AIRFOCUS_WORKSPACE_ID = "b22eade1-b00b-4015-8a19-6f4db6a8db32"
 # INFO - General information about script execution (recommended)
 # WARNING - Only warning and error messages
 # ERROR - Only error messages
-LOGGING_LEVEL = "INFO"
+LOGGING_LEVEL = "DEBUG"

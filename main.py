@@ -42,6 +42,8 @@ dotenv.load_dotenv()
 # Authentication credentials from environment variables
 JIRA_PAT = os.getenv("JIRA_PAT")
 AIRFOCUS_API_KEY = os.getenv("AIRFOCUS_API_KEY")
+logger.debug("Jira PAT: {}", JIRA_PAT)
+logger.debug("Airfocus API Key: {}", AIRFOCUS_API_KEY)
 
 def get_jira_project_data(project_key):
     """
@@ -82,11 +84,14 @@ def get_jira_project_data(project_key):
             "startAt": start_at,
             "maxResults": max_results
         }
-
+        logger.info("Requesting data from endpoint: {}", url)
+        logger.debug("Using JQL query: {}", query['jql'])
         logger.info("Requesting issues {} to {}", start_at, start_at + max_results - 1)
         
         try:
             response = requests.post(url, headers=headers, json=query, verify=False, timeout=30)
+            logger.info("Received response with status code {}", response.status_code)
+            logger.debug("Received response with status code {}", response.json())
         except requests.exceptions.ConnectionError as e:
             error_msg = f"Connection error while fetching data for Jira project {project_key}: {str(e)}"
             logger.error("{}", error_msg)
