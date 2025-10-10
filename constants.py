@@ -12,7 +12,7 @@ AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
 # JIRA Project Configuration
 # The project key of the JIRA project you want to sync
 # Example: "PROJ", "DEV", "SUPPORT", etc.
-JIRA_PROJECT_KEY = "KAN"
+JIRA_PROJECT_KEY = "JTA"
 
 # Airfocus Workspace Configuration
 # Your Airfocus workspace ID (found in the workspace URL)
