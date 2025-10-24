@@ -98,24 +98,28 @@ def validate_api_response(response: requests.Response, operation_name: str, expe
         return False, {"error": error_msg, "response": response.text}
 
 
-def get_field_mappings() -> Tuple[Optional[str], Optional[str]]:
+def get_field_mappings() -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Get JIRA field ID mappings from saved field data.
     
     Returns:
-        tuple: (jira_key_field_id, jira_updated_field_id) or (None, None) if not found
+        tuple: (jira_key_field_id, jira_updated_field_id, jira_sync_field_id) or (None, None, None) if JIRA-KEY not found
     """
     jira_key_field_id = get_airfocus_field_id("JIRA-KEY")
     jira_updated_field_id = get_airfocus_field_id("JIRA-UPDATED")
+    jira_sync_field_id = get_airfocus_field_id("JIRA-SYNC")
     
     if not jira_key_field_id:
         logger.error("Could not get JIRA-KEY field ID. Make sure to fetch field data first.")
-        return None, None
+        return None, None, None
     
     if not jira_updated_field_id:
         logger.warning("Could not get JIRA-UPDATED field ID. This field will be skipped.")
     
-    return jira_key_field_id, jira_updated_field_id
+    if not jira_sync_field_id:
+        logger.warning("Could not get JIRA-SYNC field ID. This field will be skipped.")
+    
+    return jira_key_field_id, jira_updated_field_id, jira_sync_field_id
 
 
 def get_mapped_status_id(jira_status_name: str, jira_key: str) -> Optional[str]:
@@ -870,9 +874,12 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
     markdown_content = build_markdown_description(issue_data)
     
     # Get field mappings using helper function
-    jira_key_field_id, jira_updated_field_id = get_field_mappings()
+    jira_key_field_id, jira_updated_field_id, jira_sync_field_id = get_field_mappings()
     if not jira_key_field_id:
         return {"error": "JIRA-KEY field ID not found"}
+    
+    # Get current timestamp for JIRA-SYNC field
+    current_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     
     # Prepare fields dictionary
     fields_dict = {
@@ -888,6 +895,13 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
             "text": updated
         }
         logger.debug("Added JIRA updated field {}: {}", jira_updated_field_id, updated)
+    
+    # Add JIRA-SYNC field if field ID was found
+    if jira_sync_field_id:
+        fields_dict[jira_sync_field_id] = {
+            "text": current_timestamp
+        }
+        logger.debug("Added JIRA sync field {}: {}", jira_sync_field_id, current_timestamp)
     
     # Get status ID from JIRA status name using helper function
     jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
@@ -968,9 +982,12 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
     markdown_content = build_markdown_description(issue_data)
     
     # Get field mappings using helper function
-    jira_key_field_id, jira_updated_field_id = get_field_mappings()
+    jira_key_field_id, jira_updated_field_id, jira_sync_field_id = get_field_mappings()
     if not jira_key_field_id:
         return {"error": "JIRA-KEY field ID not found"}
+    
+    # Get current timestamp for JIRA-SYNC field
+    current_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     
     # Prepare fields dictionary
     fields_dict = {
@@ -986,6 +1003,13 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
             "text": updated
         }
         logger.debug("Updated JIRA updated field {}: {}", jira_updated_field_id, updated)
+    
+    # Add JIRA-SYNC field if field ID was found
+    if jira_sync_field_id:
+        fields_dict[jira_sync_field_id] = {
+            "text": current_timestamp
+        }
+        logger.debug("Updated JIRA sync field {}: {}", jira_sync_field_id, current_timestamp)
     
     # Get status ID from JIRA status name using helper function
     jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
@@ -1038,6 +1062,17 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
             }
         })
         logger.debug("Updated JIRA updated field {}: {}", jira_updated_field_id, updated)
+    
+    # Update JIRA-SYNC field if we have the field ID
+    if jira_sync_field_id:
+        patch_operations.append({
+            "op": "replace",
+            "path": f"/fields/{jira_sync_field_id}",
+            "value": {
+                "text": current_timestamp
+            }
+        })
+        logger.debug("Updated JIRA sync field {}: {}", jira_sync_field_id, current_timestamp)
     
     logger.debug("Updated JIRA key field {}: {}", jira_key_field_id, issue_data.get('key', ''))
     
