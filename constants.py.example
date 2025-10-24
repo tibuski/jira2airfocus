@@ -1,0 +1,47 @@
+# JIRA Configuration
+# Update this URL to match your JIRA instance
+# Format: https://your-jira-instance.com/rest/api/latest
+# Documentation: https://developer.atlassian.com/server/jira/platform/rest/v11001/intro/#gettingstarted
+JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
+
+# Airfocus Configuration  
+# This URL typically stays the same for all Airfocus instances
+# Documentation: https://developer.airfocus.com/endpoints.html#/Items
+AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
+
+# JIRA Project Configuration
+# The project key of the JIRA project you want to sync
+JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
+
+# Airfocus Workspace Configuration
+# Your Airfocus workspace ID (found in the workspace URL)
+# Example: https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/items
+AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
+
+# Logging Configuration
+# Available levels: DEBUG, INFO, WARNING, ERROR
+# DEBUG - Detailed information for troubleshooting
+# INFO - General information about script execution (recommended)
+# WARNING - Only warning and error messages
+# ERROR - Only error messages
+LOGGING_LEVEL = "WARNING"
+
+# Status Mapping Configuration
+# Maps JIRA statuses to Airfocus statuses when exact matches aren't found
+# Key: Airfocus status name (must exist in your Airfocus workspace)
+# Value: List of JIRA status names that should map to this Airfocus status
+#
+# To customize this mapping:
+# 1. Check your Airfocus workspace for available status names
+# 2. Check your JIRA project for status names
+# 3. Update the mappings below as needed
+#
+# Example: If JIRA has "In Development" status and Airfocus has "In Progress",
+# add "In Development" to the "In Progress" list below 
+# CASE SENSITIVE !
+JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
+    "To Do": ["To Do"],
+    "In Progress": ["In Progress"],
+    "Done": ["Done"],
+    "On Hold": ["On hold"]
+}
