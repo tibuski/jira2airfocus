@@ -22,6 +22,153 @@ import constants
 # Disable SSL warnings when certificate verification is disabled
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Helper Functions
+def build_markdown_description(issue_data):
+    """
+    Build enhanced Markdown description from JIRA issue data.
+    
+    Args:
+        issue_data (dict): JIRA issue data containing url, key, assignee, description, attachments
+        
+    Returns:
+        str: Formatted Markdown content for Airfocus description
+    """
+    jira_url = issue_data.get("url", "")
+    jira_key = issue_data.get("key", "")
+    assignee = issue_data.get("assignee")
+    attachments = issue_data.get("attachments", [])
+    
+    markdown_parts = []
+    
+    # Add JIRA Issue link
+    markdown_parts.append(f"**JIRA Issue:** [**{jira_key}**]({jira_url})")
+    
+    # Add assignee if available
+    if assignee and assignee.get("displayName"):
+        assignee_text = assignee['displayName']
+        if assignee.get("emailAddress"):
+            assignee_text += f" ({assignee['emailAddress']})"
+        markdown_parts.append(f"**JIRA Assignee:** {assignee_text}")
+    
+    # Add description
+    jira_description = issue_data.get('description', 'No description provided in JIRA.')
+    markdown_parts.append(f"**JIRA Description:**\n\n{jira_description}")
+    
+    # Add attachments if there are any
+    if attachments:
+        markdown_parts.append("**JIRA Attachments:**")
+        for attachment in attachments:
+            filename = attachment.get("filename", "Unknown file")
+            attachment_url = attachment.get("url", "")
+            markdown_parts.append(f"- [{filename}]({attachment_url})")
+    
+    return "\n\n".join(markdown_parts)
+
+
+def validate_api_response(response, operation_name, expected_status_codes=[200]):
+    """
+    Validate API response and return standardized result.
+    
+    Args:
+        response: requests.Response object
+        operation_name (str): Name of the operation for logging
+        expected_status_codes (list): List of acceptable status codes
+        
+    Returns:
+        tuple: (success: bool, data: dict or error_dict)
+    """
+    if response.status_code in expected_status_codes:
+        try:
+            data = response.json()
+            logger.debug("{} successful. Response: {}", operation_name, data)
+            return True, data
+        except Exception as e:
+            error_msg = f"Failed to parse JSON response for {operation_name}: {str(e)}"
+            logger.error(error_msg)
+            return False, {"error": error_msg}
+    else:
+        error_msg = f"{operation_name} failed. Status code: {response.status_code}"
+        logger.error(error_msg)
+        logger.error("Response: {}", response.text)
+        return False, {"error": error_msg, "response": response.text}
+
+
+def get_field_mappings():
+    """
+    Get JIRA field ID mappings from saved field data.
+    
+    Returns:
+        tuple: (jira_key_field_id, jira_updated_field_id) or (None, None) if not found
+    """
+    jira_key_field_id = get_airfocus_field_id("JIRA-KEY")
+    jira_updated_field_id = get_airfocus_field_id("JIRA-UPDATED")
+    
+    if not jira_key_field_id:
+        logger.error("Could not get JIRA-KEY field ID. Make sure to fetch field data first.")
+        return None, None
+    
+    if not jira_updated_field_id:
+        logger.warning("Could not get JIRA-UPDATED field ID. This field will be skipped.")
+    
+    return jira_key_field_id, jira_updated_field_id
+
+
+def get_mapped_status_id(jira_status_name, jira_key):
+    """
+    Get Airfocus status ID from JIRA status name using mappings and fallbacks.
+    
+    Args:
+        jira_status_name (str): JIRA status name to map
+        jira_key (str): JIRA issue key for logging purposes
+        
+    Returns:
+        str: Airfocus status ID, or None if no suitable status found
+    """
+    if not jira_status_name:
+        return None
+    
+    # Try mappings from constants.py first
+    for airfocus_status, jira_variants in constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.items():
+        if jira_status_name in jira_variants:
+            status_id = get_airfocus_status_id(airfocus_status)
+            if status_id:
+                logger.info("Mapped JIRA status '{}' to Airfocus status '{}'", jira_status_name, airfocus_status)
+                return status_id
+    
+    # If no mapping found, warn and fall back to Draft
+    logger.warning("JIRA status '{}' not found in status mappings. Falling back to 'Draft' status.", jira_status_name)
+    status_id = get_airfocus_status_id("Draft")
+    
+    # If still no status found, get the default status
+    if not status_id:
+        try:
+            filepath = "./data/airfocus_fields.json"
+            with open(filepath, 'r', encoding='utf-8') as f:
+                field_data = json.load(f)
+            
+            # Look for default status or fall back to first available
+            statuses = field_data.get("statuses", [])
+            for status in statuses:
+                if status.get("default", False):
+                    status_id = status.get("id")
+                    logger.info("Using default status '{}' for JIRA issue {}", status.get("name"), jira_key)
+                    return status_id
+            
+            # If no default found, use first available status
+            if statuses:
+                status_id = statuses[0].get("id")
+                logger.warning("No suitable status found for JIRA status '{}', using first available status '{}' for issue {}", 
+                             jira_status_name, statuses[0].get("name"), jira_key)
+                return status_id
+                
+        except Exception as e:
+            logger.error("Failed to get default status: {}", e)
+    
+    if not status_id:
+        logger.error("Could not determine status ID for JIRA issue {}. Status will be left empty.", jira_key)
+    
+    return status_id
+
 # Configure loguru logging with both file and console output
 logger.remove()  # Remove default handler
 logger.add(
@@ -253,143 +400,141 @@ def get_airfocus_field_data(workspace_id):
     try:
         response = requests.get(url, headers=headers, verify=False)
         
-        if response.status_code == 200:
-            data = response.json()
-            logger.info("Successfully retrieved workspace data for {}", workspace_id)
-            
-            # Extract fields data from _embedded.fields (it's a dictionary, not a list)
-            embedded = data.get("_embedded", {})
-            fields_dict = embedded.get("fields", {})
-            statuses_dict = embedded.get("statuses", {})
-            
-            # Convert fields dictionary to list for easier processing
-            fields = list(fields_dict.values())
-            statuses = list(statuses_dict.values())
-            
-            # Create fields mapping for easier access
-            field_data = {
-                "workspace_id": workspace_id,
-                "fetched_at": datetime.now().isoformat(),
-                "fields": fields,
-                "field_mapping": {},
-                "statuses": statuses,
-                "status_mapping": {}
-            }
-            
-            # Create name-to-id mapping for fields
-            for field in fields:
-                field_name = field.get("name", "")
-                field_id = field.get("id", "")
-                if field_name and field_id:
-                    field_data["field_mapping"][field_name] = field_id
-            
-            # Create name-to-id mapping for statuses
-            for status in statuses:
-                status_name = status.get("name", "")
-                status_id = status.get("id", "")
-                if status_name and status_id:
-                    field_data["status_mapping"][status_name] = status_id
-            
-            # Get field IDs for JIRA-KEY and JIRA-UPDATED
-            jira_key_field_id = field_data["field_mapping"].get("JIRA-KEY")
-            jira_updated_field_id = field_data["field_mapping"].get("JIRA-UPDATED")
-            
-            # Fetch workspace items to get field values using field names as keys
-            field_values = {}
-            
-            # Create a reverse mapping from field ID to field name for easier lookup
-            id_to_name_mapping = {}
-            for field_name, field_id in field_data["field_mapping"].items():
-                id_to_name_mapping[field_id] = field_name
-            
-            if jira_key_field_id or jira_updated_field_id:
-                try:
-                    # Fetch items from workspace
-                    items_url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items/search"
-                    search_payload = {
-                        "filters": {},
-                        "pagination": {"limit": 1000, "offset": 0}
-                    }
-                    
-                    items_response = requests.post(items_url, headers=headers, json=search_payload, verify=False)
-                    
-                    if items_response.status_code == 200:
-                        items_data = items_response.json()
-                        items = items_data.get("items", [])
-                        
-                        # Extract field values from each item, using field names as keys
-                        for item in items:
-                            item_fields = item.get("fields", {})
-                            
-                            # Process all fields that we have mappings for
-                            for field_id, field_data_obj in item_fields.items():
-                                field_name = id_to_name_mapping.get(field_id)
-                                
-                                # Only process fields we recognize and have names for
-                                if field_name:
-                                    # Initialize field values list if not exists
-                                    if field_name not in field_values:
-                                        field_values[field_name] = []
-                                    
-                                    # Extract field value (handle different field types)
-                                    field_value = ""
-                                    if "text" in field_data_obj:
-                                        field_value = field_data_obj.get("text", "")
-                                    elif "value" in field_data_obj:
-                                        field_value = str(field_data_obj.get("value", ""))
-                                    elif "displayValue" in field_data_obj:
-                                        field_value = field_data_obj.get("displayValue", "")
-                                    
-                                    # Add unique values only
-                                    if field_value and field_value not in field_values[field_name]:
-                                        field_values[field_name].append(field_value)
-                        
-                        # Log extracted values for JIRA fields specifically
-                        jira_key_count = len(field_values.get("JIRA-KEY", []))
-                        jira_updated_count = len(field_values.get("JIRA-UPDATED", []))
-                        total_fields = len(field_values)
-                        
-                        logger.info("Extracted field values for {} fields from workspace items", total_fields)
-                        logger.info("JIRA-KEY: {} values, JIRA-UPDATED: {} values", jira_key_count, jira_updated_count)
-                    
-                    else:
-                        logger.warning("Failed to fetch workspace items for field values. Status code: {}", items_response.status_code)
-                        
-                except Exception as e:
-                    logger.warning("Failed to fetch workspace items for field values: {}", e)
-            
-            # Add field values to field_data
-            field_data["field_values"] = field_values
-            
-            # Save to JSON file
-            try:
-                os.makedirs("./data", exist_ok=True)
-                filepath = "./data/airfocus_fields.json"
-                
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    json.dump(field_data, f, indent=2, ensure_ascii=False)
-                
-                logger.info("Successfully saved {} field definitions, {} statuses, and field values to {}", len(fields), len(statuses), filepath)
-                logger.debug("Available fields: {}", list(field_data['field_mapping'].keys()))
-                logger.debug("Available statuses: {}", list(field_data['status_mapping'].keys()))
-                logger.debug("Field values extracted: {}", list(field_data['field_values'].keys()))
-                
-                # Log specific JIRA field values if they exist
-                if 'JIRA-KEY' in field_data['field_values']:
-                    logger.debug("JIRA-KEY values: {}", field_data['field_values']['JIRA-KEY'])
-                if 'JIRA-UPDATED' in field_data['field_values']:
-                    logger.debug("JIRA-UPDATED values: {}", field_data['field_values']['JIRA-UPDATED'])
-                
-                return field_data
-                
-            except Exception as e:
-                logger.error("Failed to save field data to file: {}", e)
-                return None
-            
-        else:
-            logger.error("Failed to retrieve workspace data for {}. Status code: {}", workspace_id, response.status_code)
-            logger.error("Response: {}", response.text)
+        success, data = validate_api_response(response, f"Get workspace data for {workspace_id}")
+        if not success:
             return None
+        
+        logger.info("Successfully retrieved workspace data for {}", workspace_id)
+        
+        # Extract fields data from _embedded.fields (it's a dictionary, not a list)
+        embedded = data.get("_embedded", {})
+        fields_dict = embedded.get("fields", {})
+        statuses_dict = embedded.get("statuses", {})
+        
+        # Convert fields dictionary to list for easier processing
+        fields = list(fields_dict.values())
+        statuses = list(statuses_dict.values())
+        
+        # Create fields mapping for easier access
+        field_data = {
+            "workspace_id": workspace_id,
+            "fetched_at": datetime.now().isoformat(),
+            "fields": fields,
+            "field_mapping": {},
+            "statuses": statuses,
+            "status_mapping": {}
+        }
+        
+        # Create name-to-id mapping for fields
+        for field in fields:
+            field_name = field.get("name", "")
+            field_id = field.get("id", "")
+            if field_name and field_id:
+                field_data["field_mapping"][field_name] = field_id
+        
+        # Create name-to-id mapping for statuses
+        for status in statuses:
+            status_name = status.get("name", "")
+            status_id = status.get("id", "")
+            if status_name and status_id:
+                field_data["status_mapping"][status_name] = status_id
+        
+        # Get field IDs for JIRA-KEY and JIRA-UPDATED
+        jira_key_field_id = field_data["field_mapping"].get("JIRA-KEY")
+        jira_updated_field_id = field_data["field_mapping"].get("JIRA-UPDATED")
+        
+        # Fetch workspace items to get field values using field names as keys
+        field_values = {}
+        
+        # Create a reverse mapping from field ID to field name for easier lookup
+        id_to_name_mapping = {}
+        for field_name, field_id in field_data["field_mapping"].items():
+            id_to_name_mapping[field_id] = field_name
+        
+        if jira_key_field_id or jira_updated_field_id:
+            try:
+                # Fetch items from workspace
+                items_url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items/search"
+                search_payload = {
+                    "filters": {},
+                    "pagination": {"limit": 1000, "offset": 0}
+                }
+                
+                items_response = requests.post(items_url, headers=headers, json=search_payload, verify=False)
+                
+                if items_response.status_code == 200:
+                    items_data = items_response.json()
+                    items = items_data.get("items", [])
+                    
+                    # Extract field values from each item, using field names as keys
+                    for item in items:
+                        item_fields = item.get("fields", {})
+                        
+                        # Process all fields that we have mappings for
+                        for field_id, field_data_obj in item_fields.items():
+                            field_name = id_to_name_mapping.get(field_id)
+                            
+                            # Only process fields we recognize and have names for
+                            if field_name:
+                                # Initialize field values list if not exists
+                                if field_name not in field_values:
+                                    field_values[field_name] = []
+                                
+                                # Extract field value (handle different field types)
+                                field_value = ""
+                                if "text" in field_data_obj:
+                                    field_value = field_data_obj.get("text", "")
+                                elif "value" in field_data_obj:
+                                    field_value = str(field_data_obj.get("value", ""))
+                                elif "displayValue" in field_data_obj:
+                                    field_value = field_data_obj.get("displayValue", "")
+                                
+                                # Add unique values only
+                                if field_value and field_value not in field_values[field_name]:
+                                    field_values[field_name].append(field_value)
+                    
+                    # Log extracted values for JIRA fields specifically
+                    jira_key_count = len(field_values.get("JIRA-KEY", []))
+                    jira_updated_count = len(field_values.get("JIRA-UPDATED", []))
+                    total_fields = len(field_values)
+                    
+                    logger.info("Extracted field values for {} fields from workspace items", total_fields)
+                    logger.info("JIRA-KEY: {} values, JIRA-UPDATED: {} values", jira_key_count, jira_updated_count)
+                
+                else:
+                    logger.warning("Failed to fetch workspace items for field values. Status code: {}", items_response.status_code)
+                    
+            except Exception as e:
+                logger.warning("Failed to fetch workspace items for field values: {}", e)
+        
+        # Add field values to field_data
+        field_data["field_values"] = field_values
+        
+        # Save to JSON file
+        try:
+            os.makedirs("./data", exist_ok=True)
+            filepath = "./data/airfocus_fields.json"
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(field_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info("Successfully saved {} field definitions, {} statuses, and field values to {}", len(fields), len(statuses), filepath)
+            logger.debug("Available fields: {}", list(field_data['field_mapping'].keys()))
+            logger.debug("Available statuses: {}", list(field_data['status_mapping'].keys()))
+            logger.debug("Field values extracted: {}", list(field_data['field_values'].keys()))
+            
+            # Log specific JIRA field values if they exist
+            if 'JIRA-KEY' in field_data['field_values']:
+                logger.debug("JIRA-KEY values: {}", field_data['field_values']['JIRA-KEY'])
+            if 'JIRA-UPDATED' in field_data['field_values']:
+                logger.debug("JIRA-UPDATED values: {}", field_data['field_values']['JIRA-UPDATED'])
+            
+            return field_data
+            
+        except Exception as e:
+            logger.error("Failed to save field data to file: {}", e)
+            return None
+
     
     except Exception as e:
         logger.error("Exception occurred while retrieving workspace data for {}: {}", workspace_id, e)
@@ -513,13 +658,11 @@ def get_airfocus_project_data(workspace_id):
     logger.debug("Search payload: {}", json.dumps(search_payload, indent=2))
     response = requests.post(url, headers=headers, json=search_payload, verify=False)
     
-    if response.status_code != 200:
-        logger.error("Failed to fetch items from endpoint. Status code: {}", response.status_code)
-        logger.error("Response: {}", response.text)
-        return {"error": f"Failed to fetch data. Status: {response.status_code}"}
+    success, data = validate_api_response(response, f"Fetch items from workspace {workspace_id}")
+    if not success:
+        return data  # Return error dict
 
     try:
-        data = response.json()
         
         # Extract items from the response
         raw_items = data.get("items", [])
@@ -709,52 +852,13 @@ def create_airfocus_item(workspace_id, issue_data):
         "Content-Type": "application/vnd.airfocus.markdown+json"
     }
     
-    # Add additional metadata in description
-    jira_url = issue_data.get("url", "")
-    jira_key = issue_data.get("key", "")
+    # Build enhanced description using helper function
+    markdown_content = build_markdown_description(issue_data)
     
-    # Build enhanced description using Markdown format
-    assignee = issue_data.get("assignee")
-    attachments = issue_data.get("attachments", [])
-    
-    # Build Markdown description
-    markdown_parts = []
-    
-    # Add JIRA Issue link
-    markdown_parts.append(f"**JIRA Issue:** [**{jira_key}**]({jira_url})")
-    
-    # Add assignee if available
-    if assignee and assignee.get("displayName"):
-        assignee_text = assignee['displayName']
-        if assignee.get("emailAddress"):
-            assignee_text += f" ({assignee['emailAddress']})"
-        markdown_parts.append(f"**JIRA Assignee:** {assignee_text}")
-    
-    # Add description
-    jira_description = issue_data.get('description', 'No description provided in JIRA.')
-    markdown_parts.append(f"**JIRA Description:**\n\n{jira_description}")
-    
-    # Add attachments if there are any
-    if attachments:
-        markdown_parts.append("**JIRA Attachments:**")
-        for attachment in attachments:
-            filename = attachment.get("filename", "Unknown file")
-            attachment_url = attachment.get("url", "")
-            markdown_parts.append(f"- [{filename}]({attachment_url})")
-    
-    # Join all parts with double newlines
-    markdown_content = "\n\n".join(markdown_parts)
-    
-    # Get the field ID for JIRA-KEY field from saved field data
-    jira_key_field_id = get_airfocus_field_id("JIRA-KEY")
+    # Get field mappings using helper function
+    jira_key_field_id, jira_updated_field_id = get_field_mappings()
     if not jira_key_field_id:
-        logger.error("Could not get JIRA-KEY field ID. Make sure to fetch field data first.")
         return {"error": "JIRA-KEY field ID not found"}
-    
-    # Get the field ID for JIRA-UPDATED field from saved field data
-    jira_updated_field_id = get_airfocus_field_id("JIRA-UPDATED")
-    if not jira_updated_field_id:
-        logger.warning("Could not get JIRA-UPDATED field ID. This field will be skipped.")
     
     # Prepare fields dictionary
     fields_dict = {
@@ -771,25 +875,10 @@ def create_airfocus_item(workspace_id, issue_data):
         }
         logger.debug("Added JIRA updated field {}: {}", jira_updated_field_id, updated)
     
-    # Get status ID from JIRA status name
+    # Get status ID from JIRA status name using helper function
     jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
-    status_id = None
-    
-    if jira_status_name:
-        # Try mappings from constants.py first
-        mapped_airfocus_status = None
-        for airfocus_status, jira_variants in constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.items():
-            if jira_status_name in jira_variants:
-                mapped_airfocus_status = airfocus_status
-                status_id = get_airfocus_status_id(airfocus_status)
-                if status_id:
-                    logger.info("Mapped JIRA status '{}' to Airfocus status '{}'", jira_status_name, airfocus_status)
-                    break
-        
-        # If no mapping found, warn and fall back to Draft
-        if not mapped_airfocus_status:
-            logger.warning("JIRA status '{}' not found in status mappings. Falling back to 'Draft' status.", jira_status_name)
-            status_id = get_airfocus_status_id("Draft")
+    jira_key = issue_data.get("key", "")
+    status_id = get_mapped_status_id(jira_status_name, jira_key)
 
     # Map JIRA fields to Airfocus fields - format description with Markdown
     airfocus_item = {
@@ -813,18 +902,17 @@ def create_airfocus_item(workspace_id, issue_data):
     
     try:
         response = requests.post(url, headers=headers, json=airfocus_item, verify=False)
+        jira_key = issue_data.get("key", "")
         
-        if response.status_code in [200, 201]:
-            data = response.json()
+        success, result = validate_api_response(response, f"Create Airfocus item for JIRA issue {jira_key}", [200, 201])
+        if success:
             logger.info("Successfully created Airfocus item for JIRA issue {}", jira_key)
-            logger.debug("Airfocus response: {}", data)
-            return data
+            return result
         else:
-            logger.error("Failed to create Airfocus item for JIRA issue {}. Status code: {}", jira_key, response.status_code)
-            logger.error("Response: {}", response.text)
-            return {"error": f"Failed to create item. Status: {response.status_code}", "response": response.text}
+            return result
     
     except Exception as e:
+        jira_key = issue_data.get("key", "")
         logger.error("Exception occurred while creating Airfocus item for JIRA issue {}: {}", jira_key, e)
         return {"error": f"Exception occurred: {str(e)}"}
 
@@ -862,52 +950,13 @@ def patch_airfocus_item(workspace_id, item_id, issue_data):
         "Content-Type": "application/vnd.airfocus.markdown+json"
     }
     
-    # Add additional metadata in description
-    jira_url = issue_data.get("url", "")
-    jira_key = issue_data.get("key", "")
+    # Build enhanced description using helper function
+    markdown_content = build_markdown_description(issue_data)
     
-    # Build enhanced description using Markdown format
-    assignee = issue_data.get("assignee")
-    attachments = issue_data.get("attachments", [])
-    
-    # Build Markdown description
-    markdown_parts = []
-    
-    # Add JIRA Issue link
-    markdown_parts.append(f"**JIRA Issue:** [**{jira_key}**]({jira_url})")
-    
-    # Add assignee if available
-    if assignee and assignee.get("displayName"):
-        assignee_text = assignee['displayName']
-        if assignee.get("emailAddress"):
-            assignee_text += f" ({assignee['emailAddress']})"
-        markdown_parts.append(f"**JIRA Assignee:** {assignee_text}")
-    
-    # Add description
-    jira_description = issue_data.get('description', 'No description provided in JIRA.')
-    markdown_parts.append(f"**JIRA Description:**\n\n{jira_description}")
-    
-    # Add attachments if there are any
-    if attachments:
-        markdown_parts.append("**JIRA Attachments:**")
-        for attachment in attachments:
-            filename = attachment.get("filename", "Unknown file")
-            attachment_url = attachment.get("url", "")
-            markdown_parts.append(f"- [{filename}]({attachment_url})")
-    
-    # Join all parts with double newlines
-    markdown_content = "\n\n".join(markdown_parts)
-    
-    # Get the field ID for JIRA-KEY field from saved field data
-    jira_key_field_id = get_airfocus_field_id("JIRA-KEY")
+    # Get field mappings using helper function
+    jira_key_field_id, jira_updated_field_id = get_field_mappings()
     if not jira_key_field_id:
-        logger.error("Could not get JIRA-KEY field ID. Make sure to fetch field data first.")
         return {"error": "JIRA-KEY field ID not found"}
-    
-    # Get the field ID for JIRA-UPDATED field from saved field data
-    jira_updated_field_id = get_airfocus_field_id("JIRA-UPDATED")
-    if not jira_updated_field_id:
-        logger.warning("Could not get JIRA-UPDATED field ID. This field will be skipped.")
     
     # Prepare fields dictionary
     fields_dict = {
@@ -924,55 +973,10 @@ def patch_airfocus_item(workspace_id, item_id, issue_data):
         }
         logger.debug("Updated JIRA updated field {}: {}", jira_updated_field_id, updated)
     
-    # Get status ID from JIRA status name
+    # Get status ID from JIRA status name using helper function
     jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
-    status_id = None
-    
-    if jira_status_name:
-        # Try mappings from constants.py first
-        mapped_airfocus_status = None
-        for airfocus_status, jira_variants in constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.items():
-            if jira_status_name in jira_variants:
-                mapped_airfocus_status = airfocus_status
-                status_id = get_airfocus_status_id(airfocus_status)
-                if status_id:
-                    logger.info("Mapped JIRA status '{}' to Airfocus status '{}'", jira_status_name, airfocus_status)
-                    break
-        
-        # If no mapping found, warn and fall back to Draft
-        if not mapped_airfocus_status:
-            logger.warning("JIRA status '{}' not found in status mappings. Falling back to 'Draft' status. Available mappings: {}", 
-                         jira_status_name, list(constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.keys()))
-            status_id = get_airfocus_status_id("Draft")
-    
-    # If still no status found, get the default status
-    if not status_id:
-        # Try to get a default status (usually "Draft" or first available)
-        try:
-            filepath = "./data/airfocus_fields.json"
-            with open(filepath, 'r', encoding='utf-8') as f:
-                field_data = json.load(f)
-            
-            # Look for default status or fall back to first available
-            statuses = field_data.get("statuses", [])
-            for status in statuses:
-                if status.get("default", False):
-                    status_id = status.get("id")
-                    logger.info("Using default status '{}' for JIRA issue {}", status.get("name"), jira_key)
-                    break
-            
-            # If no default found, use first available status
-            if not status_id and statuses:
-                status_id = statuses[0].get("id")
-                logger.warning("No suitable status found for JIRA status '{}', using first available status '{}' for issue {}", 
-                             jira_status_name, statuses[0].get("name"), jira_key)
-                
-        except Exception as e:
-            logger.error("Failed to get default status: {}", e)
-    
-    if not status_id:
-        logger.error("Could not determine status ID for JIRA issue {}. Status will be left empty.", jira_key)
-        return {"error": "Could not determine status ID"}
+    jira_key = issue_data.get("key", "")
+    status_id = get_mapped_status_id(jira_status_name, jira_key)
     
     # Create JSON Patch operations to update the item
     # JSON Patch format: [{"op": "replace", "path": "/fieldName", "value": "newValue"}]
@@ -1028,18 +1032,17 @@ def patch_airfocus_item(workspace_id, item_id, issue_data):
     
     try:
         response = requests.patch(url, headers=headers, json=patch_operations, verify=False)
+        jira_key = issue_data.get("key", "")
         
-        if response.status_code in [200, 201]:
-            data = response.json()
+        success, result = validate_api_response(response, f"Update Airfocus item {item_id} for JIRA issue {jira_key}", [200, 201])
+        if success:
             logger.info("Successfully updated Airfocus item {} for JIRA issue {}", item_id, jira_key)
-            logger.debug("Airfocus response: {}", data)
-            return data
+            return result
         else:
-            logger.error("Failed to update Airfocus item {} for JIRA issue {}. Status code: {}", item_id, jira_key, response.status_code)
-            logger.error("Response: {}", response.text)
-            return {"error": f"Failed to update item. Status: {response.status_code}", "response": response.text}
+            return result
     
     except Exception as e:
+        jira_key = issue_data.get("key", "")
         logger.error("Exception occurred while updating Airfocus item {} for JIRA issue {}: {}", item_id, jira_key, e)
         return {"error": f"Exception occurred: {str(e)}"}
 
