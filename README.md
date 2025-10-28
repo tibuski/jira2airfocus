@@ -4,7 +4,7 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items. Thi
 
 ## Features
 
-- ✅ Fetch JIRA issues from specified project (excluding closed issues)
+- ✅ Fetch JIRA issues from specified project (excluding issues with "Done" status category)
 - ✅ Create corresponding items in Airfocus workspace
 - ✅ **Smart sync**: Update existing Airfocus items when JIRA data is newer
 - ✅ Duplicate detection using JIRA-KEY custom field
@@ -139,14 +139,14 @@ python main.py
 ```
 
 This will:
-1. Fetch all non-closed issues from the configured JIRA project
+1. Fetch all issues from the configured JIRA project (excluding those with "Done" status category)
 2. Fetch existing items from the Airfocus workspace
 3. Get Airfocus field definitions
 4. **Synchronize data intelligently:**
    - Create new items in Airfocus for JIRA issues that don't already exist
    - Update existing Airfocus items when JIRA data is newer (based on updated timestamps)
    - Skip items that are already up-to-date
-   - Skip JIRA issues with completed statuses (Done, Closed, etc.)
+   - Skip JIRA issues with "Done" status category (includes Done, Closed, Resolved, etc.)
 5. Clean up old data files
 
 ### Intelligent Sync Behavior
@@ -165,7 +165,7 @@ The script performs intelligent synchronization between JIRA and Airfocus:
 - Updates JIRA-UPDATED field with new timestamp
 
 **Skipped Issues:**
-- Issues with completed statuses (Done, Closed, Completed, Resolved, Finished, Fixed)
+- Issues with "Done" status category (automatically excludes all completed statuses like Done, Closed, Resolved, etc.)
 - Issues that are already up-to-date in Airfocus
 
 ### Data Files

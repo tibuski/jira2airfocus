@@ -23,6 +23,42 @@ import constants
 # Disable SSL warnings when certificate verification is disabled
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Configure loguru logging with both file and console output
+logger.remove()  # Remove default handler
+# File Logging
+logger.add(
+    "data/jira2airfocus.log",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
+    rotation="10 MB",
+    retention="30 days"
+)
+# Console Logging
+logger.add(
+    sys.stderr,
+    level=constants.LOGGING_LEVEL,
+    colorize=True
+)
+
+# Load environment variables from .env file
+dotenv.load_dotenv()
+
+# Authentication credentials from environment variables
+JIRA_PAT = os.getenv("JIRA_PAT")
+AIRFOCUS_API_KEY = os.getenv("AIRFOCUS_API_KEY")
+
+# Do NOT log secrets. Log only presence to avoid leaking credentials.
+if JIRA_PAT:
+    logger.debug("JIRA_PAT is set.")
+else:
+    logger.warning("JIRA_PAT is not set.")
+
+if AIRFOCUS_API_KEY:
+    logger.debug("AIRFOCUS_API_KEY is set.")
+else:
+    logger.warning("AIRFOCUS_API_KEY is not set.")
+
+
 # Helper Functions
 def build_markdown_description(issue_data: Dict[str, Any]) -> str:
     """
@@ -178,38 +214,6 @@ def get_mapped_status_id(jira_status_name: str, jira_key: str) -> Optional[str]:
     
     return status_id
 
-# Configure loguru logging with both file and console output
-logger.remove()  # Remove default handler
-logger.add(
-    "jira2airfocus.log",
-    level=constants.LOGGING_LEVEL,
-    format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
-    rotation="10 MB",
-    retention="30 days"
-)
-logger.add(
-    sys.stderr,
-    level=constants.LOGGING_LEVEL,
-    colorize=True
-)
-
-# Load environment variables from .env file
-dotenv.load_dotenv()
-
-# Authentication credentials from environment variables
-JIRA_PAT = os.getenv("JIRA_PAT")
-AIRFOCUS_API_KEY = os.getenv("AIRFOCUS_API_KEY")
-
-# Do NOT log secrets. Log only presence to avoid leaking credentials.
-if JIRA_PAT:
-    logger.debug("JIRA_PAT is set.")
-else:
-    logger.warning("JIRA_PAT is not set.")
-
-if AIRFOCUS_API_KEY:
-    logger.debug("AIRFOCUS_API_KEY is set.")
-else:
-    logger.warning("AIRFOCUS_API_KEY is not set.")
 
 def get_jira_project_data(project_key: str) -> Dict[str, Any]:
     """
@@ -243,15 +247,15 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
     while True:
         # Define JQL query to fetch specific fields for the project
         # Note: "key" field is included by default and contains the issue key (e.g., PROJ-123)
-        # Exclude closed issues from the results
+        # Exclude issues with status category "done" from the results
         query = {
-            "jql": f"project = {project_key} AND status != Closed",
+            "jql": f"project = {project_key} AND statusCategory != Done",
             "fields": ["key", "summary", "description", "status", "assignee", "attachment", "updated"],
             "startAt": start_at,
             "maxResults": max_results
         }
         logger.info("Requesting data from endpoint: {}", url)
-        logger.debug("Using JQL query: {}", query['jql'])
+        logger.info("Using JQL query: {}", query['jql'])
         logger.info("Requesting issues {} to {}", start_at, start_at + max_results - 1)
         
         try:
