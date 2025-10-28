@@ -1,4 +1,5 @@
 # Added by me
+.vscode/
 data/
 constants.py
 *.json
