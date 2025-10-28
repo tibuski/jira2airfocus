@@ -8,6 +8,7 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items. Thi
 - ✅ Create corresponding items in Airfocus workspace
 - ✅ **Always sync**: Update all existing Airfocus items with current JIRA data
 - ✅ Duplicate detection using JIRA-KEY custom field
+- ✅ Automatic team assignment to created/updated items
 - ✅ Rich Markdown formatting for issue descriptions
 - ✅ Attachment linking from JIRA to Airfocus
 - ✅ Status mapping between JIRA and Airfocus statuses
@@ -207,6 +208,31 @@ JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
 - Status names are **case sensitive**
 - Make sure the Airfocus status names (keys) exist in your workspace
 - If no mapping is found, the script will attempt to use the JIRA status as-is
+
+### Team Field Configuration
+
+The script can automatically assign team values to created/updated items using the `TEAM_FIELD` configuration in `constants.py`.
+
+**How it works:**
+- Key: Airfocus field name (must be a select/dropdown field in your workspace)
+- Value: List of team values to assign (first value will be used)
+
+**Example configuration:**
+```python
+TEAM_FIELD = {"ONE Product Teams": ["ALPHA-Team1"]}
+```
+
+**To set up team assignment:**
+1. Create a select field in your Airfocus workspace (e.g., "ONE Product Teams")
+2. Add the desired options to the field (e.g., "ALPHA-Team1", "ALPHA-Team2")
+3. Update the `TEAM_FIELD` configuration with the field name and desired value
+4. The script will automatically assign this team value to all created and updated items
+
+**Important notes:**
+- The field must be a select/dropdown field type in Airfocus
+- The team value must exist as an option in the select field
+- Field and option names are **case sensitive**
+- If the field or option is not found, items will be created without team assignment
 
 ### Custom Field Requirements
 

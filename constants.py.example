@@ -9,20 +9,10 @@ JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
 # Documentation: https://developer.airfocus.com/endpoints.html#/Items
 AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
 
-# JIRA Project Configuration
-# The project key of the JIRA project you want to sync
-JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
-
 # Airfocus Workspace Configuration
 # Your Airfocus workspace ID (found in the workspace URL)
 # Example: https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/items
 AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
-
-# Timezone Configuration
-# Hours to add to UTC timestamps from Airfocus to convert to local time
-# Example: +2 for Central European Time (CET/CEST), +1 for Central European Time (CET), 0 for UTC
-# This affects how Airfocus lastUpdatedAt timestamps are converted for comparison with JIRA timestamps
-AIRFOCUS_TZ_OFFSET_HOURS = 2
 
 # Logging Configuration
 # Available levels: DEBUG, INFO, WARNING, ERROR
@@ -41,22 +31,24 @@ LOG_FILE_PATH = "data/jira2airfocus.log"
 # Set to False to disable SSL verification (may be needed for self-signed certificates)
 SSL_VERIFY = False
 
+# JIRA Project Configuration
+# The project key of the JIRA project you want to sync
+JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
+
 # Status Mapping Configuration
 # Maps JIRA statuses to Airfocus statuses when exact matches aren't found
-# Key: Airfocus status name (must exist in your Airfocus workspace)
-# Value: List of JIRA status names that should map to this Airfocus status
-#
-# To customize this mapping:
-# 1. Check your Airfocus workspace for available status names
-# 2. Check your JIRA project for status names
-# 3. Update the mappings below as needed
-#
-# Example: If JIRA has "In Development" status and Airfocus has "In Progress",
-# add "In Development" to the "In Progress" list below 
+# Example: 
+# "Airfocus Status name": ["JIRA Status 1", "JIRA Status 2"]
 # CASE SENSITIVE !
 JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
-    "To Do": ["To Do"],
-    "In Progress": ["In Progress"],
-    "Done": ["Done"],
+    "Draft": ["To Do","Open"],
+    "In Progress": ["In Progress","IN REFINEMENT"],
+    "Done": ["Done", "Cancelled"],
     "On Hold": ["On hold"]
 }
+
+# Team field will be set when creating items in Airfocus
+# Key: Airfocus field name (must be a select field in your workspace)
+# Value: List of team values to assign (first value will be used)
+# Example: {"Team": ["Alpha Team"]} will set the "Team" field to "Alpha Team"
+TEAM_FIELD = {"YOUR_TEAM_FIELD_NAME": ["YOUR_TEAM_VALUE"]}

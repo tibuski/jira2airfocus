@@ -797,6 +797,24 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
     """
     jira_key = issue_data.get("key", "")
     
+    # Retrieve team field ID and value from constants
+    team_field_id = None
+    team_field_value = None
+    
+    if constants.TEAM_FIELD:
+        # Extract field name and value from constants.TEAM_FIELD
+        for field_name, field_values in constants.TEAM_FIELD.items():
+            team_field_id = get_airfocus_field_id(field_name)
+            if team_field_id:
+                team_field_value = field_values[0] if field_values else None
+                logger.info("Retrieved team field ID '{}' for field '{}' with value '{}'", team_field_id, field_name, team_field_value)
+                break
+            else:
+                logger.error("Team field '{}' not found in Airfocus field mappings", field_name)
+    
+    if not team_field_id:
+        logger.warning("No valid team field ID found, items will be created without team assignment")
+    
     # Construct Airfocus API endpoint URL
     url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items"
     
@@ -820,6 +838,18 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
             "text": issue_data.get("key", "")
         }
     }
+    
+    # Add team field if available
+    if team_field_id and team_field_value:
+        # Get the option ID for the team value
+        team_option_id = get_airfocus_field_option_id(field_name, team_field_value)
+        if team_option_id:
+            fields_dict[team_field_id] = {
+                "selection": [team_option_id]
+            }
+            logger.debug("Added team field {}: {} (option ID: {})", team_field_id, team_field_value, team_option_id)
+        else:
+            logger.error("Could not find option ID for team value '{}' in field '{}'", team_field_value, field_name)
     
     # Get status ID from JIRA status name using helper function
     jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
@@ -852,14 +882,18 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
         
         success, result = validate_api_response(response, f"Create Airfocus item for JIRA issue {jira_key}", [200, 201])
         if success:
-            logger.info("Successfully created Airfocus item for JIRA issue {}", jira_key)
+            team_info = f" with team field '{team_field_value}'" if team_field_id and team_field_value else ""
+            logger.info("Successfully created Airfocus item for JIRA issue {}{}", jira_key, team_info)
             return result
         else:
+            team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+            logger.error("Failed to create Airfocus item for JIRA issue {}{}: {}", jira_key, team_info, result.get('error', 'Unknown error'))
             return result
     
     except Exception as e:
         jira_key = issue_data.get("key", "")
-        logger.error("Exception occurred while creating Airfocus item for JIRA issue {}: {}", jira_key, e)
+        team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+        logger.error("Exception occurred while creating Airfocus item for JIRA issue {}{}: {}", jira_key, team_info, e)
         return {"error": f"Exception occurred: {str(e)}"}
 
 
@@ -887,6 +921,26 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
     Returns:
         dict: Airfocus API response if successful, or error dictionary if failed.
     """
+    jira_key = issue_data.get("key", "")
+    
+    # Retrieve team field ID and value from constants
+    team_field_id = None
+    team_field_value = None
+    
+    if constants.TEAM_FIELD:
+        # Extract field name and value from constants.TEAM_FIELD
+        for field_name, field_values in constants.TEAM_FIELD.items():
+            team_field_id = get_airfocus_field_id(field_name)
+            if team_field_id:
+                team_field_value = field_values[0] if field_values else None
+                logger.debug("Retrieved team field ID '{}' for field '{}' with value '{}' for update", team_field_id, field_name, team_field_value)
+                break
+            else:
+                logger.error("Team field '{}' not found in Airfocus field mappings for update", field_name)
+    
+    if not team_field_id:
+        logger.debug("No valid team field ID found for update, item will be updated without team assignment")
+    
     # Construct Airfocus API endpoint URL for PATCH
     url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items/{item_id}"
     
@@ -951,6 +1005,30 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
         }
     })
     
+    # Update team field if available
+    if team_field_id and team_field_value:
+        # Get the option ID for the team value (need to get field name from constants again)
+        team_field_name = None
+        for field_name, _ in constants.TEAM_FIELD.items():
+            team_field_name = field_name
+            break
+        
+        if team_field_name:
+            team_option_id = get_airfocus_field_option_id(team_field_name, team_field_value)
+            if team_option_id:
+                patch_operations.append({
+                    "op": "replace",
+                    "path": f"/fields/{team_field_id}",
+                    "value": {
+                        "selection": [team_option_id]
+                    }
+                })
+                logger.debug("Updated team field {}: {} (option ID: {})", team_field_id, team_field_value, team_option_id)
+            else:
+                logger.error("Could not find option ID for team value '{}' in field '{}' for update", team_field_value, team_field_name)
+        else:
+            logger.error("Could not determine team field name for update")
+    
     logger.debug("Updated JIRA key field {}: {}", jira_key_field_id, issue_data.get('key', ''))
     
     logger.debug("Updating Airfocus item {} for JIRA issue {} with {} patch operations", item_id, jira_key, len(patch_operations))
@@ -962,18 +1040,70 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
         
         success, result = validate_api_response(response, f"Update Airfocus item {item_id} for JIRA issue {jira_key}", [200, 201])
         if success:
-            logger.info("Successfully updated Airfocus item {} for JIRA issue {}", item_id, jira_key)
+            team_info = f" with team field '{team_field_value}'" if team_field_id and team_field_value else ""
+            logger.info("Successfully updated Airfocus item {} for JIRA issue {}{}", item_id, jira_key, team_info)
             return result
         else:
+            team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+            logger.error("Failed to update Airfocus item {} for JIRA issue {}{}: {}", item_id, jira_key, team_info, result.get('error', 'Unknown error'))
             return result
     
     except Exception as e:
         jira_key = issue_data.get("key", "")
-        logger.error("Exception occurred while updating Airfocus item {} for JIRA issue {}: {}", item_id, jira_key, e)
+        team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+        logger.error("Exception occurred while updating Airfocus item {} for JIRA issue {}{}: {}", item_id, jira_key, team_info, e)
         return {"error": f"Exception occurred: {str(e)}"}
 
 
-
+def get_airfocus_field_option_id(field_name: str, option_name: str) -> Optional[str]:
+    """
+    Get a specific option ID from a select field in the saved Airfocus fields data.
+    
+    Args:
+        field_name (str): The name of the field to search in.
+        option_name (str): The name of the option to retrieve the ID for.
+    
+    Returns:
+        str: The option ID for the specified option, or None if not found.
+    """
+    try:
+        filepath = "./data/airfocus_fields.json"
+        
+        # Check if file exists
+        if not os.path.exists(filepath):
+            logger.warning("Airfocus fields file not found at {}. Run get_airfocus_field_data() first.", filepath)
+            return None
+        
+        # Read the field data
+        with open(filepath, 'r', encoding='utf-8') as f:
+            field_data = json.load(f)
+        
+        # Find the field by name
+        fields = field_data.get("fields", [])
+        for field in fields:
+            if field.get("name") == field_name:
+                # Check if it's a select field with options
+                if field.get("typeId") == "select":
+                    options = field.get("settings", {}).get("options", [])
+                    for option in options:
+                        if option.get("name") == option_name:
+                            option_id = option.get("id")
+                            logger.debug("Found option '{}' in field '{}' with ID: {}", option_name, field_name, option_id)
+                            return option_id
+                    
+                    logger.warning("Option '{}' not found in select field '{}'", option_name, field_name)
+                    logger.debug("Available options in '{}': {}", field_name, [opt.get("name") for opt in options])
+                    return None
+                else:
+                    logger.error("Field '{}' is not a select field (type: {})", field_name, field.get("typeId"))
+                    return None
+        
+        logger.warning("Field '{}' not found in saved field data", field_name)
+        return None
+            
+    except Exception as e:
+        logger.error("Exception occurred while reading field option data: {}", e)
+        return None
 
 
 def sync_jira_to_airfocus(jira_data_file: str, workspace_id: str) -> Dict[str, Any]:
