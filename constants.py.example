@@ -32,6 +32,15 @@ AIRFOCUS_TZ_OFFSET_HOURS = 2
 # ERROR - Only error messages
 LOGGING_LEVEL = "WARNING"
 
+# Log file path configuration
+# Path where the application log file will be stored
+LOG_FILE_PATH = "data/jira2airfocus.log"
+
+# SSL Verification Configuration
+# Set to True to enable SSL certificate verification (recommended for production)
+# Set to False to disable SSL verification (may be needed for self-signed certificates)
+SSL_VERIFY = False
+
 # Status Mapping Configuration
 # Maps JIRA statuses to Airfocus statuses when exact matches aren't found
 # Key: Airfocus status name (must exist in your Airfocus workspace)

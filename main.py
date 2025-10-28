@@ -20,14 +20,15 @@ from loguru import logger
 
 import constants
 
-# Disable SSL warnings when certificate verification is disabled
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Conditionally disable SSL warnings when certificate verification is disabled
+if not constants.SSL_VERIFY:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure loguru logging with both file and console output
 logger.remove()  # Remove default handler
 # File Logging
 logger.add(
-    "data/jira2airfocus.log",
+    constants.LOG_FILE_PATH,
     level="INFO",
     format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
     rotation="10 MB",
@@ -252,7 +253,7 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
         logger.info("Requesting issues {} to {}", start_at, start_at + max_results - 1)
         
         try:
-            response = requests.post(url, headers=headers, json=query, verify=False, timeout=30)
+            response = requests.post(url, headers=headers, json=query, verify=constants.SSL_VERIFY, timeout=30)
             logger.info("Received response with status code {}", response.status_code)
             logger.debug("Received response with status code {}", response.json())
         except requests.exceptions.ConnectionError as e:
@@ -417,7 +418,7 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
     }
     
     try:
-        response = requests.get(url, headers=headers, verify=False)
+        response = requests.get(url, headers=headers, verify=constants.SSL_VERIFY)
         
         success, data = validate_api_response(response, f"Get workspace data for {workspace_id}")
         if not success:
@@ -478,7 +479,7 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
                     "pagination": {"limit": 1000, "offset": 0}
                 }
                 
-                items_response = requests.post(items_url, headers=headers, json=search_payload, verify=False)
+                items_response = requests.post(items_url, headers=headers, json=search_payload, verify=constants.SSL_VERIFY)
                 
                 if items_response.status_code == 200:
                     items_data = items_response.json()
@@ -671,7 +672,7 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
     
     logger.info("Requesting data from endpoint: {}", url)
     logger.debug("Search payload: {}", json.dumps(search_payload, indent=2))
-    response = requests.post(url, headers=headers, json=search_payload, verify=False)
+    response = requests.post(url, headers=headers, json=search_payload, verify=constants.SSL_VERIFY)
     
     success, data = validate_api_response(response, f"Fetch items from workspace {workspace_id}")
     if not success:
@@ -846,7 +847,7 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
     logger.debug("Payload: {}", json.dumps(airfocus_item, indent=2))
     
     try:
-        response = requests.post(url, headers=headers, json=airfocus_item, verify=False)
+        response = requests.post(url, headers=headers, json=airfocus_item, verify=constants.SSL_VERIFY)
         jira_key = issue_data.get("key", "")
         
         success, result = validate_api_response(response, f"Create Airfocus item for JIRA issue {jira_key}", [200, 201])
@@ -956,7 +957,7 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
     logger.debug("Patch operations: {}", json.dumps(patch_operations, indent=2))
     
     try:
-        response = requests.patch(url, headers=headers, json=patch_operations, verify=False)
+        response = requests.patch(url, headers=headers, json=patch_operations, verify=constants.SSL_VERIFY)
         jira_key = issue_data.get("key", "")
         
         success, result = validate_api_response(response, f"Update Airfocus item {item_id} for JIRA issue {jira_key}", [200, 201])
