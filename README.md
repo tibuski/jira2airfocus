@@ -4,11 +4,10 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items. Thi
 
 ## Features
 
-- ✅ Fetch JIRA issues from specified project (excluding issues with "Done" status category)
+- ✅ Fetch all JIRA Epic issues from specified project
 - ✅ Create corresponding items in Airfocus workspace
-- ✅ **Smart sync**: Update existing Airfocus items when JIRA data is newer
+- ✅ **Always sync**: Update all existing Airfocus items with current JIRA data
 - ✅ Duplicate detection using JIRA-KEY custom field
-- ✅ Date comparison using JIRA-UPDATED field for selective updates
 - ✅ Rich Markdown formatting for issue descriptions
 - ✅ Attachment linking from JIRA to Airfocus
 - ✅ Status mapping between JIRA and Airfocus statuses
@@ -139,34 +138,27 @@ python main.py
 ```
 
 This will:
-1. Fetch all issues from the configured JIRA project (excluding those with "Done" status category)
+1. Fetch all Epic issues from the configured JIRA project
 2. Fetch existing items from the Airfocus workspace
 3. Get Airfocus field definitions
-4. **Synchronize data intelligently:**
+4. **Synchronize all data:**
    - Create new items in Airfocus for JIRA issues that don't already exist
-   - Update existing Airfocus items when JIRA data is newer (based on updated timestamps)
-   - Skip items that are already up-to-date
-   - Skip JIRA issues with "Done" status category (includes Done, Closed, Resolved, etc.)
+   - Always update existing Airfocus items with current JIRA data (no date comparison)
+   - Ensure all Airfocus items reflect the latest JIRA information
 5. Clean up old data files
 
-### Intelligent Sync Behavior
+### Sync Behavior
 
-The script performs intelligent synchronization between JIRA and Airfocus:
+The script performs complete synchronization between JIRA and Airfocus:
 
 **For New Issues:**
 - Creates new items in Airfocus with all JIRA data
-- Sets JIRA-KEY field to the JIRA issue key
-- Sets JIRA-UPDATED field to the JIRA updated timestamp
+- Sets JIRA-KEY field to the JIRA issue key for duplicate prevention
 
 **For Existing Issues:**
-- Compares JIRA updated timestamp with JIRA-UPDATED field in Airfocus
-- Only updates if JIRA data is newer than Airfocus data
-- Updates name, description, status, and custom fields
-- Updates JIRA-UPDATED field with new timestamp
-
-**Skipped Issues:**
-- Issues with "Done" status category (automatically excludes all completed statuses like Done, Closed, Resolved, etc.)
-- Issues that are already up-to-date in Airfocus
+- Always updates with current JIRA data (name, description, status, custom fields)
+- Overwrites any manual changes made in Airfocus
+- Ensures consistency with JIRA as the single source of truth
 
 ### Data Files
 
@@ -218,23 +210,16 @@ JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
 
 ### Custom Field Requirements
 
-The script requires two custom fields in your Airfocus workspace:
+The script requires one custom field in your Airfocus workspace:
 
 #### JIRA-KEY Field (Required)
-This field stores JIRA issue keys and prevents duplicates:
+This field stores JIRA issue keys and prevents duplicate items:
 
 1. Go to your Airfocus workspace settings
 2. Navigate to **Custom Fields**
 3. Create a new **Text** field named "JIRA-KEY"
 
-#### JIRA-UPDATED Field (Recommended)
-This field stores JIRA issue update timestamps for intelligent sync:
-
-1. Go to your Airfocus workspace settings
-2. Navigate to **Custom Fields**
-3. Create a new **Text** field named "JIRA-UPDATED"
-
-**Note:** Without the JIRA-UPDATED field, the script will always update existing items on every run. With this field, it only updates items when JIRA data is actually newer.
+**Note:** This field is essential for the script to identify existing items and avoid creating duplicates.
 
 ## Troubleshooting
 
@@ -254,8 +239,8 @@ This field stores JIRA issue update timestamps for intelligent sync:
 - Run the script again to fetch updated field definitions
 
 **Items Always Being Updated:**
-- If you want intelligent sync (only update when JIRA is newer), create a "JIRA-UPDATED" custom field
-- This field stores JIRA update timestamps for comparison
+- This is the expected behavior - the script always syncs all JIRA data to Airfocus
+- JIRA is treated as the single source of truth
 
 **400 Bad Request Errors:**
 - Check that your custom fields exist and have the correct names
