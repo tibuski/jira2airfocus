@@ -13,8 +13,7 @@ from datetime import datetime
 import urllib3
 import glob
 import dotenv
-import re
-from typing import Dict, List, Tuple, Optional, Set, Any, Union
+from typing import Dict, List, Tuple, Optional, Any
 
 from loguru import logger
 

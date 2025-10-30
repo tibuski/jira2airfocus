@@ -10,8 +10,11 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items. Thi
 - ✅ Duplicate detection using JIRA-KEY custom field
 - ✅ Automatic team assignment to created/updated items
 - ✅ Rich Markdown formatting for issue descriptions
-- ✅ Attachment linking from JIRA to Airfocus
+- ✅ Attachment linking from JIRA to Airfocus (fixed URL handling)
 - ✅ Status mapping between JIRA and Airfocus statuses
+- ✅ **Object-oriented design** with `JiraItem` and `AirfocusItem` classes
+- ✅ **Enhanced data validation** and error handling
+- ✅ **Type safety** with proper class-based data structures
 - ✅ Comprehensive logging with colored console output
 - ✅ Automatic cleanup of old data files
 - ✅ SSL certificate validation bypass for corporate environments
@@ -128,6 +131,41 @@ JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
 2. Look at the URL: `https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/...`
 3. Copy the workspace ID from the URL
 
+## Architecture
+
+### Class-Based Design
+
+The application uses a modern object-oriented architecture with dedicated classes for data handling:
+
+#### JiraItem Class (`jira_item.py`)
+- **Purpose**: Encapsulates all JIRA issue data and processing logic
+- **Benefits**: Type safety, data validation, consistent field handling
+- **Features**:
+  - Automatic parsing from both raw JIRA API and simplified formats
+  - Built-in validation for required fields
+  - Enhanced markdown description generation
+  - Proper attachment URL handling (fixed in latest version)
+  - Clean timestamp processing
+
+#### AirfocusItem Class (`airfocus_item.py`) 
+- **Purpose**: Handles Airfocus item creation and updates
+- **Benefits**: Encapsulates API payload generation and field mappings
+- **Features**:
+  - Automatic field ID resolution
+  - Team assignment logic
+  - Status mapping integration
+  - Payload generation for CREATE and PATCH operations
+
+#### Enhanced Functions
+- `sync_jira_to_airfocus_enhanced()` - Uses JiraItem objects for better validation
+- `create_airfocus_item_from_jira_object()` - Type-safe item creation
+- `patch_airfocus_item_from_jira_object()` - Type-safe item updates
+
+### Backward Compatibility
+- All existing dictionary-based functions are preserved
+- New class-based functions provide enhanced functionality
+- Gradual migration path available
+
 ## Usage
 
 ### Basic Synchronization
@@ -160,6 +198,25 @@ The script performs complete synchronization between JIRA and Airfocus:
 - Always updates with current JIRA data (name, description, status, custom fields)
 - Overwrites any manual changes made in Airfocus
 - Ensures consistency with JIRA as the single source of truth
+
+### Testing the Classes
+
+Test the new class functionality with the included test scripts:
+
+```bash
+# Test JiraItem class functionality
+python test_jira_item_class.py
+
+# Test AirfocusItem class functionality  
+python test_airfocus_item.py
+```
+
+These scripts demonstrate:
+- Creating objects from different data formats
+- Data validation and error handling
+- Attachment processing (including the fixed URL handling)
+- Markdown generation
+- Object conversion methods
 
 ### Data Files
 
@@ -268,6 +325,15 @@ This field stores JIRA issue keys and prevents duplicate items:
 - This is the expected behavior - the script always syncs all JIRA data to Airfocus
 - JIRA is treated as the single source of truth
 
+**Attachment Links Not Working:**
+- Fixed in the latest version with enhanced JiraAttachment class
+- Now handles both raw JIRA API format (`content` field) and simplified format (`url` field)
+- Invalid attachments are automatically detected and logged
+
+**Class Import Errors:**
+- Ensure both `jira_item.py` and `airfocus_item.py` are in the same directory as `main.py`
+- Check that all dependencies in `requirements.txt` are installed
+
 **400 Bad Request Errors:**
 - Check that your custom fields exist and have the correct names
 - Verify that status mappings in constants.py match your Airfocus workspace statuses
@@ -280,18 +346,25 @@ Check `jira2airfocus.log` for detailed execution logs. The log file rotates at 1
 
 ```
 jira2airfocus/
-├── main.py              # Main application script
-├── constants.py         # Configuration constants
-├── requirements.txt     # Python dependencies
-├── .env                 # Environment variables (create this)
-├── .env.example        # Environment variables template
-├── README.md           # This file
-├── LICENSE             # Project license
-├── jira2airfocus.log   # Application log file
-└── data/              # Data directory (auto-created)
-    ├── jira_data.json
-    ├── airfocus_data.json
-    └── airfocus_fields.json
+├── main.py                      # Main application script
+├── jira_item.py                 # JiraItem class for JIRA data handling
+├── airfocus_item.py            # AirfocusItem class for Airfocus data handling
+├── constants.py                # Configuration constants
+├── constants.py.example        # Configuration template
+├── requirements.txt            # Python dependencies
+├── test_jira_item_class.py     # Test script for JiraItem class
+├── test_airfocus_item.py       # Test script for AirfocusItem class
+├── .env                        # Environment variables (create this)
+├── .env.example               # Environment variables template
+├── README.md                  # This file
+├── LICENSE                    # Project license
+├── AIRFOCUS_ITEM_SUMMARY.md   # AirfocusItem class documentation
+├── jira2airfocus.log          # Application log file (auto-created)
+└── data/                      # Data directory (auto-created)
+    ├── jira_data.json         # Latest JIRA issues data
+    ├── airfocus_data.json     # Latest Airfocus items data
+    ├── airfocus_fields.json   # Airfocus field definitions
+    └── *.json                 # Timestamped backup files (auto-cleaned)
 ```
 
 ## Contributing
