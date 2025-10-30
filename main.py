@@ -18,7 +18,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from loguru import logger
 
 import constants
-from models import AirfocusItem, JiraItem
+from models import AirfocusItem, JiraItem, get_airfocus_field_id, get_airfocus_status_id, get_mapped_status_id
 
 # Conditionally disable SSL warnings when certificate verification is disabled
 if not constants.SSL_VERIFY:
@@ -61,22 +61,6 @@ else:
 
 
 # Helper Functions
-def build_markdown_description(issue_data: Dict[str, Any]) -> str:
-    """
-    Build enhanced Markdown description from JIRA issue data.
-    
-    DEPRECATED: This function is kept for backward compatibility.
-    New code should use JiraItem.build_markdown_description() instead.
-    
-    Args:
-        issue_data (dict): JIRA issue data containing url, key, assignee, description, attachments
-        
-    Returns:
-        str: Formatted Markdown content for Airfocus description
-    """
-    # Convert to JiraItem and use its method for consistency
-    jira_item = JiraItem.from_simplified_data(issue_data)
-    return jira_item.build_markdown_description()
 
 
 def validate_api_response(response: requests.Response, operation_name: str, expected_status_codes: Optional[List[int]] = None) -> Tuple[bool, Dict[str, Any]]:
@@ -127,61 +111,7 @@ def get_field_mappings() -> Optional[str]:
     return jira_key_field_id
 
 
-def get_mapped_status_id(jira_status_name: str, jira_key: str) -> Optional[str]:
-    """
-    Get Airfocus status ID from JIRA status name using mappings and fallbacks.
-    
-    Args:
-        jira_status_name (str): JIRA status name to map
-        jira_key (str): JIRA issue key for logging purposes
-        
-    Returns:
-        str: Airfocus status ID, or None if no suitable status found
-    """
-    if not jira_status_name:
-        return None
-    
-    # Try mappings from constants.py first
-    for airfocus_status, jira_variants in constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.items():
-        if jira_status_name in jira_variants:
-            status_id = get_airfocus_status_id(airfocus_status)
-            if status_id:
-                logger.info("Mapped JIRA status '{}' to Airfocus status '{}'", jira_status_name, airfocus_status)
-                return status_id
-    
-    # If no mapping found, warn and fall back to Draft
-    logger.warning("JIRA status '{}' not found in status mappings. Falling back to 'Draft' status.", jira_status_name)
-    status_id = get_airfocus_status_id("Draft")
-    
-    # If still no status found, get the default status
-    if not status_id:
-        try:
-            filepath = "./data/airfocus_fields.json"
-            with open(filepath, 'r', encoding='utf-8') as f:
-                field_data = json.load(f)
-            
-            # Look for default status or fall back to first available
-            statuses = field_data.get("statuses", [])
-            for status in statuses:
-                if status.get("default", False):
-                    status_id = status.get("id")
-                    logger.info("Using default status '{}' for JIRA issue {}", status.get("name"), jira_key)
-                    return status_id
-            
-            # If no default found, use first available status
-            if statuses:
-                status_id = statuses[0].get("id")
-                logger.warning("No suitable status found for JIRA status '{}', using first available status '{}' for issue {}", 
-                             jira_status_name, statuses[0].get("name"), jira_key)
-                return status_id
-                
-        except Exception as e:
-            logger.error("Failed to get default status: {}", e)
-    
-    if not status_id:
-        logger.error("Could not determine status ID for JIRA issue {}. Status will be left empty.", jira_key)
-    
-    return status_id
+
 
 
 def get_jira_project_data(project_key: str) -> Dict[str, Any]:
@@ -281,7 +211,7 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
             
             logger.debug("Processed issue: {}", jira_item.url)
 
-            # Convert to dictionary format for backward compatibility with existing code
+            # Store JiraItem objects directly for streamlined data flow
             all_issues.append(jira_item.to_dict())
         
         # Get total count from first response
@@ -500,82 +430,7 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_airfocus_field_id(field_name: str) -> Optional[str]:
-    """
-    Get a specific field ID from the saved Airfocus fields data.
-    
-    Args:
-        field_name (str): The name of the field to retrieve the ID for.
-    
-    Returns:
-        str: The field ID for the specified field, or None if not found.
-    """
-    try:
-        filepath = "./data/airfocus_fields.json"
-        
-        # Check if file exists
-        if not os.path.exists(filepath):
-            logger.warning("Airfocus fields file not found at {}. Run get_airfocus_field_data() first.", filepath)
-            return None
-        
-        # Read the field data
-        with open(filepath, 'r', encoding='utf-8') as f:
-            field_data = json.load(f)
-        
-        # Get field ID from mapping
-        field_mapping = field_data.get("field_mapping", {})
-        field_id = field_mapping.get(field_name)
-        
-        if field_id:
-            logger.debug("Found {} field ID: {}", field_name, field_id)
-            return field_id
-        else:
-            logger.warning("{} field not found in saved field mapping", field_name)
-            logger.debug("Available fields: {}", list(field_mapping.keys()))
-            return None
-            
-    except Exception as e:
-        logger.error("Exception occurred while reading field data: {}", e)
-        return None
 
-
-def get_airfocus_status_id(status_name: str) -> Optional[str]:
-    """
-    Get a specific status ID from the saved Airfocus fields data.
-    
-    Args:
-        status_name (str): The name of the status to retrieve the ID for.
-    
-    Returns:
-        str: The status ID for the specified status, or None if not found.
-    """
-    try:
-        filepath = "./data/airfocus_fields.json"
-        
-        # Check if file exists
-        if not os.path.exists(filepath):
-            logger.warning("Airfocus fields file not found at {}. Run get_airfocus_field_data() first.", filepath)
-            return None
-        
-        # Read the field data
-        with open(filepath, 'r', encoding='utf-8') as f:
-            field_data = json.load(f)
-        
-        # Get status ID from mapping
-        status_mapping = field_data.get("status_mapping", {})
-        status_id = status_mapping.get(status_name)
-        
-        if status_id:
-            logger.debug("Found {} status ID: {}", status_name, status_id)
-            return status_id
-        else:
-            logger.warning("{} status not found in saved status mapping", status_name)
-            logger.debug("Available statuses: {}", list(status_mapping.keys()))
-            return None
-            
-    except Exception as e:
-        logger.error("Exception occurred while reading status data: {}", e)
-        return None
 
 
 def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
@@ -716,30 +571,22 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
         return {"error": f"Exception occurred: {str(e)}"}
 
 
-def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[str, Any]:
+def create_airfocus_item(workspace_id: str, jira_item: JiraItem) -> Dict[str, Any]:
     """
     Create an item in Airfocus based on JIRA issue data.
     
     This function sends a POST request to the Airfocus API to create a new item
-    using the data extracted from JIRA issues.
+    using the data from a JiraItem object.
     
     Args:
         workspace_id (str): The Airfocus workspace ID where the item will be created.
-        issue_data (dict): Dictionary containing JIRA issue data with keys:
-                          - key: JIRA issue key
-                          - summary: Issue summary (maps to Airfocus name)
-                          - description: Issue description
-                          - status: Issue status information
-                          - url: Direct link to JIRA issue
-                          - assignee: Assignee information
-                          - attachments: List of attachments
-                          - updated: Last updated timestamp (cleaned)
+        jira_item (JiraItem): JiraItem instance containing JIRA issue data
         
     Returns:
         dict: Airfocus API response if successful, or error dictionary if failed.
     """
     # Create AirfocusItem from JIRA data
-    item = AirfocusItem.from_jira_issue(issue_data)
+    item = AirfocusItem.from_jira_item(jira_item)
     jira_key = item.jira_key
     
     # Validate item data before API call
@@ -783,32 +630,42 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
         return {"error": f"Exception occurred: {str(e)}"}
 
 
-def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, Any]) -> Dict[str, Any]:
+def create_airfocus_item_from_dict(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create an item in Airfocus based on JIRA issue data dictionary.
+    
+    DEPRECATED: Use create_airfocus_item() with JiraItem objects instead.
+    This function is kept for backward compatibility.
+    
+    Args:
+        workspace_id (str): The Airfocus workspace ID where the item will be created.
+        issue_data (dict): Dictionary containing JIRA issue data
+        
+    Returns:
+        dict: Airfocus API response if successful, or error dictionary if failed.
+    """
+    # Convert dict to JiraItem first, then use the new method
+    jira_item = JiraItem.from_simplified_data(issue_data)
+    return create_airfocus_item(workspace_id, jira_item)
+
+
+def patch_airfocus_item(workspace_id: str, item_id: str, jira_item: JiraItem) -> Dict[str, Any]:
     """
     Update an existing item in Airfocus based on updated JIRA issue data.
     
     This function sends a PATCH request to the Airfocus API to update an existing item
-    using the data extracted from JIRA issues when the JIRA data is newer than the 
-    existing Airfocus data.
+    using the data from a JiraItem object.
     
     Args:
         workspace_id (str): The Airfocus workspace ID where the item exists.
         item_id (str): The Airfocus item ID to update.
-        issue_data (dict): Dictionary containing JIRA issue data with keys:
-                          - key: JIRA issue key
-                          - summary: Issue summary (maps to Airfocus name)
-                          - description: Issue description
-                          - status: Issue status information
-                          - url: Direct link to JIRA issue
-                          - assignee: Assignee information
-                          - attachments: List of attachments
-                          - updated: Last updated timestamp (cleaned)
+        jira_item (JiraItem): JiraItem instance containing JIRA issue data
         
     Returns:
         dict: Airfocus API response if successful, or error dictionary if failed.
     """
     # Create AirfocusItem from JIRA data
-    item = AirfocusItem.from_jira_issue(issue_data)
+    item = AirfocusItem.from_jira_item(jira_item)
     jira_key = item.jira_key
     
     # Validate item data before API call
@@ -850,6 +707,26 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
         team_info = f" (attempted to set team field '{item.team_field_value}')" if item.team_field_value else ""
         logger.error("Exception occurred while updating Airfocus item {} for JIRA issue {}{}: {}", item_id, jira_key, team_info, e)
         return {"error": f"Exception occurred: {str(e)}"}
+
+
+def patch_airfocus_item_from_dict(workspace_id: str, item_id: str, issue_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Update an existing item in Airfocus based on JIRA issue data dictionary.
+    
+    DEPRECATED: Use patch_airfocus_item() with JiraItem objects instead.
+    This function is kept for backward compatibility.
+    
+    Args:
+        workspace_id (str): The Airfocus workspace ID where the item exists.
+        item_id (str): The Airfocus item ID to update.
+        issue_data (dict): Dictionary containing JIRA issue data
+        
+    Returns:
+        dict: Airfocus API response if successful, or error dictionary if failed.
+    """
+    # Convert dict to JiraItem first, then use the new method
+    jira_item = JiraItem.from_simplified_data(issue_data)
+    return patch_airfocus_item(workspace_id, item_id, jira_item)
 
 
 def get_airfocus_field_option_id(field_name: str, option_name: str) -> Optional[str]:
@@ -1011,8 +888,8 @@ def _perform_sync_operations(workspace_id: str, jira_items: List[JiraItem], airf
                 
                 logger.info("JIRA issue {} - updating existing Airfocus item {}", jira_key, item_id)
                 
-                # Update existing item - convert JiraItem back to dict for existing function
-                result = patch_airfocus_item(workspace_id, item_id, jira_item.to_dict())
+                # Update existing item directly with JiraItem
+                result = patch_airfocus_item(workspace_id, item_id, jira_item)
                 
                 if "error" in result:
                     error_count += 1
@@ -1026,8 +903,8 @@ def _perform_sync_operations(workspace_id: str, jira_items: List[JiraItem], airf
                 # Item doesn't exist - create new one
                 logger.info("JIRA issue {} not found in Airfocus - creating new item", jira_key)
                 
-                # Create new item - convert JiraItem back to dict for existing function
-                result = create_airfocus_item(workspace_id, jira_item.to_dict())
+                # Create new item directly with JiraItem
+                result = create_airfocus_item(workspace_id, jira_item)
                 
                 if "error" in result:
                     error_count += 1

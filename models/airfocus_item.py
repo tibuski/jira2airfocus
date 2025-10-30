@@ -41,29 +41,23 @@ class AirfocusItem:
             self.assignee_user_group_ids = []
     
     @classmethod
-    def from_jira_issue(cls, issue_data: Dict[str, Any]) -> 'AirfocusItem':
+    def from_jira_item(cls, jira_item: 'JiraItem') -> 'AirfocusItem':
         """
-        Create AirfocusItem from JIRA issue data.
+        Create AirfocusItem from JiraItem object.
         
         Args:
-            issue_data: Dictionary containing JIRA issue data
+            jira_item: JiraItem instance containing JIRA issue data
             
         Returns:
             AirfocusItem instance populated with JIRA data
         """
-        # Import here to avoid circular import
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        import main
+        jira_key = jira_item.key
+        name = jira_item.summary
+        description = jira_item.build_markdown_description()
         
-        jira_key = issue_data.get("key", "")
-        name = issue_data.get("summary", "")
-        description = main.build_markdown_description(issue_data)
-        
-        # Get status mapping
-        jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
-        status_id = main.get_mapped_status_id(jira_status_name, jira_key)
+        # Get status mapping using local implementation to avoid circular import
+        jira_status_name = jira_item.get_status_name()
+        status_id = cls._get_mapped_status_id(jira_status_name, jira_key)
         
         # Get team field value from constants
         team_field_value = None
@@ -79,6 +73,129 @@ class AirfocusItem:
             status_id=status_id,
             team_field_value=team_field_value
         )
+
+    @staticmethod
+    def _get_mapped_status_id(jira_status_name: str, jira_key: str) -> Optional[str]:
+        """
+        Get Airfocus status ID from JIRA status name using mappings and fallbacks.
+        
+        Args:
+            jira_status_name (str): JIRA status name to map
+            jira_key (str): JIRA issue key for logging purposes
+            
+        Returns:
+            str: Airfocus status ID, or None if no suitable status found
+        """
+        import json
+        import os
+        from loguru import logger
+        
+        if not jira_status_name:
+            return None
+        
+        # Try mappings from constants.py first
+        for airfocus_status, jira_variants in constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.items():
+            if jira_status_name in jira_variants:
+                status_id = AirfocusItem._get_airfocus_status_id(airfocus_status)
+                if status_id:
+                    logger.info("Mapped JIRA status '{}' to Airfocus status '{}'", jira_status_name, airfocus_status)
+                    return status_id
+        
+        # If no mapping found, warn and fall back to Draft
+        logger.warning("JIRA status '{}' not found in status mappings. Falling back to 'Draft' status.", jira_status_name)
+        status_id = AirfocusItem._get_airfocus_status_id("Draft")
+        
+        # If still no status found, get the default status
+        if not status_id:
+            try:
+                filepath = "./data/airfocus_fields.json"
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    field_data = json.load(f)
+                
+                # Look for default status or fall back to first available
+                statuses = field_data.get("statuses", [])
+                for status in statuses:
+                    if status.get("default", False):
+                        status_id = status.get("id")
+                        logger.info("Using default status '{}' for JIRA issue {}", status.get("name"), jira_key)
+                        return status_id
+                
+                # If no default found, use first available status
+                if statuses:
+                    status_id = statuses[0].get("id")
+                    logger.warning("No suitable status found for JIRA status '{}', using first available status '{}' for issue {}", 
+                                 jira_status_name, statuses[0].get("name"), jira_key)
+                    return status_id
+                    
+            except Exception as e:
+                logger.error("Failed to get default status: {}", e)
+        
+        if not status_id:
+            logger.error("Could not determine status ID for JIRA issue {}. Status will be left empty.", jira_key)
+        
+        return status_id
+
+    @staticmethod
+    def _get_airfocus_status_id(status_name: str) -> Optional[str]:
+        """
+        Get a specific status ID from the saved Airfocus fields data.
+        
+        Args:
+            status_name (str): The name of the status to retrieve the ID for.
+        
+        Returns:
+            str: The status ID for the specified status, or None if not found.
+        """
+        import json
+        import os
+        from loguru import logger
+        
+        try:
+            filepath = "./data/airfocus_fields.json"
+            
+            # Check if file exists
+            if not os.path.exists(filepath):
+                logger.warning("Airfocus fields file not found at {}. Run get_airfocus_field_data() first.", filepath)
+                return None
+            
+            # Read the field data
+            with open(filepath, 'r', encoding='utf-8') as f:
+                field_data = json.load(f)
+            
+            # Get status ID from mapping
+            status_mapping = field_data.get("status_mapping", {})
+            status_id = status_mapping.get(status_name)
+            
+            if status_id:
+                logger.debug("Found {} status ID: {}", status_name, status_id)
+                return status_id
+            else:
+                logger.warning("{} status not found in saved status mapping", status_name)
+                logger.debug("Available statuses: {}", list(status_mapping.keys()))
+                return None
+                
+        except Exception as e:
+            logger.error("Exception occurred while reading status data: {}", e)
+            return None
+
+    @classmethod
+    def from_jira_issue(cls, issue_data: Dict[str, Any]) -> 'AirfocusItem':
+        """
+        Create AirfocusItem from JIRA issue data dictionary.
+        
+        DEPRECATED: Use from_jira_item() with JiraItem objects instead.
+        This method is kept for backward compatibility.
+        
+        Args:
+            issue_data: Dictionary containing JIRA issue data
+            
+        Returns:
+            AirfocusItem instance populated with JIRA data
+        """
+        # Convert dict to JiraItem first, then use the new method
+        from .jira_item import JiraItem
+        jira_item = JiraItem.from_simplified_data(issue_data)
+        return cls.from_jira_item(jira_item)
     
     @classmethod
     def from_airfocus_data(cls, airfocus_data: Dict[str, Any]) -> 'AirfocusItem':
