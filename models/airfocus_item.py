@@ -52,6 +52,9 @@ class AirfocusItem:
             AirfocusItem instance populated with JIRA data
         """
         # Import here to avoid circular import
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         import main
         
         jira_key = issue_data.get("key", "")
@@ -107,6 +110,9 @@ class AirfocusItem:
     
     def _get_jira_key_field_id(self) -> Optional[str]:
         """Get the JIRA-KEY field ID from field mappings."""
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         import main
         return main.get_field_mappings()
     
@@ -117,6 +123,9 @@ class AirfocusItem:
         Returns:
             tuple: (field_name, field_id, team_field_value)
         """
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         import main
         
         if not constants.TEAM_FIELD:
@@ -139,6 +148,9 @@ class AirfocusItem:
         Returns:
             Dictionary containing field mappings for the API
         """
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         import main
         
         fields_dict = {}

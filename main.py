@@ -18,8 +18,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from loguru import logger
 
 import constants
-from airfocus_item import AirfocusItem
-from jira_item import JiraItem
+from models import AirfocusItem, JiraItem
 
 # Conditionally disable SSL warnings when certificate verification is disabled
 if not constants.SSL_VERIFY:
