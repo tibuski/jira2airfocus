@@ -1,380 +1,64 @@
 # JIRA to Airfocus Integration
 
-A Python script that synchronizes JIRA issues with Airfocus workspace items. This tool fetches issues from a JIRA project and creates corresponding items in an Airfocus workspace, avoiding duplicates and maintaining data consistency.
+A Python script that synchronizes JIRA issues with Airfocus workspace items.
 
 ## Features
 
-- ✅ Fetch all JIRA Epic issues from specified project
-- ✅ Create corresponding items in Airfocus workspace
-- ✅ **Always sync**: Update all existing Airfocus items with current JIRA data
-- ✅ Duplicate detection using JIRA-KEY custom field
-- ✅ Automatic team assignment to created/updated items
-- ✅ Rich Markdown formatting for issue descriptions
-- ✅ Attachment linking from JIRA to Airfocus (fixed URL handling)
-- ✅ Status mapping between JIRA and Airfocus statuses
-- ✅ **Object-oriented design** with `JiraItem` and `AirfocusItem` classes
-- ✅ **Enhanced data validation** and error handling
-- ✅ **Type safety** with proper class-based data structures
-- ✅ Comprehensive logging with colored console output
-- ✅ Automatic cleanup of old data files
-- ✅ SSL certificate validation bypass for corporate environments
-
-## Prerequisites
-
-- Python 3.7 or higher
-- JIRA Personal Access Token (PAT)
-- Airfocus API Key
-- Access to both JIRA and Airfocus instances
+- Fetch JIRA Epic issues and sync to Airfocus workspace
+- Update existing items with current JIRA data
+- Duplicate detection and prevention
+- Automatic team assignment
+- Status mapping between JIRA and Airfocus
+- Attachment linking and rich Markdown formatting
 
 ## Installation
 
-### 1. Clone the Repository
+1. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-git clone <repository-url>
-cd jira2airfocus
-```
+2. **Create Configuration**
+   
+   Copy `constants.py.example` to `constants.py` and update:
+   ```python
+   # JIRA Configuration
+   JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
+   JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
+   JIRA_PAT = "your_jira_token_here"
+   
+   # Airfocus Configuration
+   AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
+   AIRFOCUS_API_KEY = "your_airfocus_api_key_here"
+   ```
 
-### 2. Create and Activate Virtual Environment
+## Getting API Credentials
 
-```bash
-# Create virtual environment
-python -m venv venv
+**JIRA Personal Access Token:**
+1. Go to JIRA → Account Settings → Security → API tokens
+2. Create API token and copy it
 
-# Activate virtual environment
-# On Windows (PowerShell)
-venv\Scripts\Activate.ps1
+**Airfocus API Key:**
+1. Go to Airfocus → Settings → API Keys
+2. Generate new API key and copy it
 
-# On Windows (Command Prompt)
-venv\Scripts\activate.bat
+**Airfocus Workspace ID:**
+- Find it in your Airfocus workspace URL: `https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/...`
 
-# On macOS/Linux
-source venv/bin/activate
-```
+## Setup Requirements
 
-### 3. Install Dependencies
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-### 4. Create Environment Configuration
-
-Create a `.env` file in the project root directory with your API credentials:
-
-```bash
-# Copy the example and edit with your values
-cp .env.example .env
-```
-
-Edit the `.env` file with your actual credentials:
-
-```env
-# JIRA Configuration
-JIRA_PAT=your_jira_personal_access_token_here
-
-# Airfocus Configuration  
-AIRFOCUS_API_KEY=your_airfocus_api_key_here
-```
-
-### 5. Configure Constants
-
-Edit `constants.py` to match your environment:
-
-```python
-# JIRA REST API URL - Update with your JIRA instance URL
-JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
-
-# Airfocus REST API URL (usually stays the same)
-AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
-
-# JIRA project key to sync
-JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
-
-# Airfocus Workspace ID (found in Airfocus URL)
-AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
-
-# Logging level (DEBUG, INFO, WARNING, ERROR)
-LOGGING_LEVEL = "INFO"
-
-# Status Mapping Configuration
-# Maps JIRA statuses to Airfocus statuses when exact matches aren't found
-JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
-    "To Do": ["To Do"],
-    "In Progress": ["In Progress"],
-    "Done": ["Done"],
-    "On Hold": ["On hold"]
-}
-```
-
-## Getting Your API Credentials
-
-### JIRA Personal Access Token (PAT)
-
-1. Log in to your JIRA instance
-2. Go to **Account Settings** → **Security** → **Create and manage API tokens**
-3. Click **Create API token**
-4. Give it a descriptive name (e.g., "Airfocus Integration")
-5. Copy the generated token and paste it in your `.env` file
-
-### Airfocus API Key
-
-1. Log in to [Airfocus](https://app.airfocus.com)
-2. Go to **Settings** → **API Keys**
-3. Click **Generate new API key**
-4. Give it a descriptive name
-5. Copy the generated key and paste it in your `.env` file
-
-### Finding Your Airfocus Workspace ID
-
-1. Navigate to your Airfocus workspace
-2. Look at the URL: `https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/...`
-3. Copy the workspace ID from the URL
-
-## Architecture
-
-### Class-Based Design
-
-The application uses a modern object-oriented architecture with dedicated classes for data handling:
-
-#### JiraItem Class (`jira_item.py`)
-- **Purpose**: Encapsulates all JIRA issue data and processing logic
-- **Benefits**: Type safety, data validation, consistent field handling
-- **Features**:
-  - Automatic parsing from both raw JIRA API and simplified formats
-  - Built-in validation for required fields
-  - Enhanced markdown description generation
-  - Proper attachment URL handling (fixed in latest version)
-  - Clean timestamp processing
-
-#### AirfocusItem Class (`airfocus_item.py`) 
-- **Purpose**: Handles Airfocus item creation and updates
-- **Benefits**: Encapsulates API payload generation and field mappings
-- **Features**:
-  - Automatic field ID resolution
-  - Team assignment logic
-  - Status mapping integration
-  - Payload generation for CREATE and PATCH operations
-
-#### Enhanced Functions
-- `sync_jira_to_airfocus_enhanced()` - Uses JiraItem objects for better validation
-- `create_airfocus_item_from_jira_object()` - Type-safe item creation
-- `patch_airfocus_item_from_jira_object()` - Type-safe item updates
-
-### Backward Compatibility
-- All existing dictionary-based functions are preserved
-- New class-based functions provide enhanced functionality
-- Gradual migration path available
+**Required Custom Field in Airfocus:**
+- Create a **Text** field named "JIRA-KEY" in your Airfocus workspace settings
+- This prevents duplicate items during sync
 
 ## Usage
 
-### Basic Synchronization
-
-Run the complete synchronization process:
-
+Run the synchronization:
 ```bash
 python main.py
 ```
 
-This will:
-1. Fetch all Epic issues from the configured JIRA project
-2. Fetch existing items from the Airfocus workspace
-3. Get Airfocus field definitions
-4. **Synchronize all data:**
-   - Create new items in Airfocus for JIRA issues that don't already exist
-   - Always update existing Airfocus items with current JIRA data (no date comparison)
-   - Ensure all Airfocus items reflect the latest JIRA information
-5. Clean up old data files
-
-### Sync Behavior
-
-The script performs complete synchronization between JIRA and Airfocus:
-
-**For New Issues:**
-- Creates new items in Airfocus with all JIRA data
-- Sets JIRA-KEY field to the JIRA issue key for duplicate prevention
-
-**For Existing Issues:**
-- Always updates with current JIRA data (name, description, status, custom fields)
-- Overwrites any manual changes made in Airfocus
-- Ensures consistency with JIRA as the single source of truth
-
-### Testing the Classes
-
-Test the new class functionality with the included test scripts:
-
-```bash
-# Test JiraItem class functionality
-python test_jira_item_class.py
-
-# Test AirfocusItem class functionality  
-python test_airfocus_item.py
-```
-
-These scripts demonstrate:
-- Creating objects from different data formats
-- Data validation and error handling
-- Attachment processing (including the fixed URL handling)
-- Markdown generation
-- Object conversion methods
-
-### Data Files
-
-The script creates several data files in the `./data/` directory:
-
-- `jira_data.json` - Latest JIRA issues data
-- `airfocus_data.json` - Latest Airfocus items data
-- `airfocus_fields.json` - Airfocus field definitions
-- Timestamped backup files (automatically cleaned up)
-
-## Configuration Options
-
-### Logging Levels
-
-Set the `LOGGING_LEVEL` in `constants.py`:
-
-- `DEBUG` - Detailed information for debugging
-- `INFO` - General information (default)
-- `WARNING` - Warning messages only
-- `ERROR` - Error messages only
-
-### Status Mapping Configuration
-
-The script includes a flexible status mapping system that allows you to map JIRA statuses to Airfocus statuses when exact matches aren't found. This is configured in the `JIRA_TO_AIRFOCUS_STATUS_MAPPING` dictionary in `constants.py`.
-
-**How it works:**
-- Key: Airfocus status name (must exist in your Airfocus workspace)
-- Value: List of JIRA status names that should map to this Airfocus status
-
-**To customize the mapping:**
-1. Check your Airfocus workspace for available status names
-2. Check your JIRA project for status names
-3. Update the mappings in `constants.py` as needed
-
-**Example configuration:**
-```python
-JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
-    "To Do": ["To Do", "Open", "New", "Backlog"],
-    "In Progress": ["In Progress", "In Development", "Active"],
-    "Done": ["Done", "Closed", "Resolved", "Fixed"],
-    "On Hold": ["On hold", "Blocked", "Waiting"]
-}
-```
-
-**Important notes:**
-- Status names are **case sensitive**
-- Make sure the Airfocus status names (keys) exist in your workspace
-- If no mapping is found, the script will attempt to use the JIRA status as-is
-
-### Team Field Configuration
-
-The script can automatically assign team values to created/updated items using the `TEAM_FIELD` configuration in `constants.py`.
-
-**How it works:**
-- Key: Airfocus field name (must be a select/dropdown field in your workspace)
-- Value: List of team values to assign (first value will be used)
-
-**Example configuration:**
-```python
-TEAM_FIELD = {"ONE Product Teams": ["ALPHA-Team1"]}
-```
-
-**To set up team assignment:**
-1. Create a select field in your Airfocus workspace (e.g., "ONE Product Teams")
-2. Add the desired options to the field (e.g., "ALPHA-Team1", "ALPHA-Team2")
-3. Update the `TEAM_FIELD` configuration with the field name and desired value
-4. The script will automatically assign this team value to all created and updated items
-
-**Important notes:**
-- The field must be a select/dropdown field type in Airfocus
-- The team value must exist as an option in the select field
-- Field and option names are **case sensitive**
-- If the field or option is not found, items will be created without team assignment
-
-### Custom Field Requirements
-
-The script requires one custom field in your Airfocus workspace:
-
-#### JIRA-KEY Field (Required)
-This field stores JIRA issue keys and prevents duplicate items:
-
-1. Go to your Airfocus workspace settings
-2. Navigate to **Custom Fields**
-3. Create a new **Text** field named "JIRA-KEY"
-
-**Note:** This field is essential for the script to identify existing items and avoid creating duplicates.
-
-## Troubleshooting
-
-### Common Issues
-
-**SSL Certificate Errors:**
-- The script disables SSL verification for corporate environments
-- If you need to enable SSL verification, remove `verify=False` from all `requests` calls
-
-**Authentication Errors:**
-- Verify your JIRA PAT and Airfocus API key are correct
-- Check that your JIRA user has permission to access the project
-- Ensure your Airfocus API key has workspace access
-
-**JIRA-KEY Field Not Found:**
-- Create the custom field in Airfocus workspace settings
-- Run the script again to fetch updated field definitions
-
-**Items Always Being Updated:**
-- This is the expected behavior - the script always syncs all JIRA data to Airfocus
-- JIRA is treated as the single source of truth
-
-**Attachment Links Not Working:**
-- Fixed in the latest version with enhanced JiraAttachment class
-- Now handles both raw JIRA API format (`content` field) and simplified format (`url` field)
-- Invalid attachments are automatically detected and logged
-
-**Class Import Errors:**
-- Ensure both `jira_item.py` and `airfocus_item.py` are in the same directory as `main.py`
-- Check that all dependencies in `requirements.txt` are installed
-
-**400 Bad Request Errors:**
-- Check that your custom fields exist and have the correct names
-- Verify that status mappings in constants.py match your Airfocus workspace statuses
-
-### Log Files
-
-Check `jira2airfocus.log` for detailed execution logs. The log file rotates at 10MB and keeps 30 days of history.
-
-## Project Structure
-
-```
-jira2airfocus/
-├── main.py                      # Main application script
-├── jira_item.py                 # JiraItem class for JIRA data handling
-├── airfocus_item.py            # AirfocusItem class for Airfocus data handling
-├── constants.py                # Configuration constants
-├── constants.py.example        # Configuration template
-├── requirements.txt            # Python dependencies
-├── test_jira_item_class.py     # Test script for JiraItem class
-├── test_airfocus_item.py       # Test script for AirfocusItem class
-├── .env                        # Environment variables (create this)
-├── .env.example               # Environment variables template
-├── README.md                  # This file
-├── LICENSE                    # Project license
-├── AIRFOCUS_ITEM_SUMMARY.md   # AirfocusItem class documentation
-├── jira2airfocus.log          # Application log file (auto-created)
-└── data/                      # Data directory (auto-created)
-    ├── jira_data.json         # Latest JIRA issues data
-    ├── airfocus_data.json     # Latest Airfocus items data
-    ├── airfocus_fields.json   # Airfocus field definitions
-    └── *.json                 # Timestamped backup files (auto-cleaned)
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-See the [LICENSE](LICENSE) file for license information.
+The script will:
+- Fetch JIRA Epic issues from your project
+- Create/update corresponding items in Airfocus
+- Always sync latest JIRA data (JIRA is the source of truth)
