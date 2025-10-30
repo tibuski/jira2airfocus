@@ -13,25 +13,53 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items.
 
 ## Installation
 
-1. **Install Dependencies**
+1. **Clone Repository**
    ```bash
-   pip install -r requirements.txt
+   git clone https://github.com/tibuski/jira2airfocus
+   cd jira2airfocus
    ```
 
-2. **Create Configuration**
+2. **Create Virtual Environment**
+   ```bash
+   python -m venv venv
+   ```
    
-   Copy `constants.py.example` to `constants.py` and update the key settings:
+   **Activate Virtual Environment:**
+   ```powershell
+   # PowerShell
+   venv\Scripts\Activate.ps1
+   ```
+   ```bash
+   # Linux/macOS
+   source venv/bin/activate
+   ```
+
+3. **Install Dependencies**
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+
+4. **Create Configuration Files**
    
-   **Basic Configuration:**
+   **API Credentials (.env file):**
+   Copy `.env.example` to `.env` and add your API credentials:
+   ```env
+   # JIRA Configuration
+   JIRA_PAT=your_jira_personal_access_token_here
+   
+   # Airfocus Configuration
+   AIRFOCUS_API_KEY=your_airfocus_api_key_here
+   ```
+   
+   **Main Configuration (constants.py):**
+   Copy `constants.py.example` to `constants.py` and update:
    ```python
    # JIRA Configuration
    JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
    JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"  # Your JIRA project key
-   JIRA_PAT = "your_jira_token_here"
    
    # Airfocus Configuration  
    AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"  # From Airfocus URL
-   AIRFOCUS_API_KEY = "your_airfocus_api_key_here"
    ```
    
    **Optional Configuration:**
