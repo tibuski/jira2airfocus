@@ -903,6 +903,156 @@ def get_airfocus_field_option_id(field_name: str, option_name: str) -> Optional[
         return None
 
 
+def _load_and_prepare_sync_data(jira_data_file: str, workspace_id: str) -> Tuple[List[JiraItem], Dict[str, Any], Dict[str, Any]]:
+    """
+    Helper function to load and prepare data for synchronization.
+    
+    Args:
+        jira_data_file (str): Path to the JSON file containing JIRA issue data.
+        workspace_id (str): The Airfocus workspace ID where items will be created/updated.
+        
+    Returns:
+        tuple: (jira_items, airfocus_by_jira_key, sync_stats)
+    """
+    # Read JIRA data from JSON file
+    with open(jira_data_file, 'r', encoding='utf-8') as f:
+        jira_data = json.load(f)
+    
+    # Read Airfocus data from JSON file
+    airfocus_data_file = "./data/airfocus_data.json"
+    airfocus_data = {}
+    if os.path.exists(airfocus_data_file):
+        with open(airfocus_data_file, 'r', encoding='utf-8') as f:
+            airfocus_data = json.load(f)
+    else:
+        logger.warning("Airfocus data file not found at {}. All items will be treated as new.", airfocus_data_file)
+    
+    # Convert all issues to JiraItem objects with validation
+    raw_issues = jira_data.get("issues", [])
+    jira_items = []
+    validation_failures = 0
+    
+    for issue_dict in raw_issues:
+        try:
+            jira_item = JiraItem.from_simplified_data(issue_dict)
+            validation_errors = jira_item.validate()
+            
+            if validation_errors:
+                logger.warning("Skipping JIRA issue {} due to validation errors: {}", 
+                             jira_item.key, ", ".join(validation_errors))
+                validation_failures += 1
+                continue
+            
+            jira_items.append(jira_item)
+            
+        except Exception as e:
+            logger.error("Failed to create JiraItem from issue data {}: {}", 
+                       issue_dict.get("key", "Unknown"), e)
+            validation_failures += 1
+            continue
+    
+    logger.info("Successfully converted {} JIRA issues to JiraItem objects ({} validation failures)", 
+               len(jira_items), validation_failures)
+    
+    # Build Airfocus lookup mapping
+    airfocus_items = airfocus_data.get("items", [])
+    airfocus_by_jira_key = {}
+    
+    for item_data in airfocus_items:
+        fields = item_data.get("fields", {})
+        jira_key_field = fields.get("JIRA-KEY", {})
+        if jira_key_field and "value" in jira_key_field:
+            jira_key = jira_key_field["value"]
+            if jira_key:
+                airfocus_item = AirfocusItem.from_airfocus_data(item_data)
+                airfocus_by_jira_key[jira_key] = airfocus_item
+    
+    logger.info("Starting synchronization of {} JIRA issues to Airfocus workspace {}", len(jira_items), workspace_id)
+    logger.info("Found {} existing Airfocus items for comparison", len(airfocus_items))
+    logger.debug("Built lookup mapping for {} Airfocus items with JIRA keys", len(airfocus_by_jira_key))
+    
+    sync_stats = {
+        "total_raw_issues": len(raw_issues),
+        "validation_failures": validation_failures,
+        "processed_issues": len(jira_items)
+    }
+    
+    return jira_items, airfocus_by_jira_key, sync_stats
+
+
+def _perform_sync_operations(workspace_id: str, jira_items: List[JiraItem], airfocus_by_jira_key: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Helper function to perform the actual sync operations.
+    
+    Args:
+        workspace_id (str): The Airfocus workspace ID.
+        jira_items (list): List of JiraItem objects.
+        airfocus_by_jira_key (dict): Mapping of JIRA keys to Airfocus items.
+        
+    Returns:
+        dict: Results of sync operations.
+    """
+    success_count = 0
+    error_count = 0
+    updated_count = 0
+    created_count = 0
+    errors = []
+    
+    for jira_item in jira_items:
+        jira_key = jira_item.key
+        
+        try:
+            # Check if item exists in Airfocus
+            existing_item = airfocus_by_jira_key.get(jira_key)
+            
+            if existing_item:
+                # Item exists - update it with JIRA data
+                item_id = existing_item.item_id
+                
+                logger.info("JIRA issue {} - updating existing Airfocus item {}", jira_key, item_id)
+                
+                # Update existing item - convert JiraItem back to dict for existing function
+                result = patch_airfocus_item(workspace_id, item_id, jira_item.to_dict())
+                
+                if "error" in result:
+                    error_count += 1
+                    errors.append({"jira_key": jira_key, "action": "update", "error": result["error"]})
+                    logger.error("Failed to update JIRA issue {}: {}", jira_key, result['error'])
+                else:
+                    success_count += 1
+                    updated_count += 1
+                    logger.info("Successfully updated Airfocus item for JIRA issue {}", jira_key)
+            else:
+                # Item doesn't exist - create new one
+                logger.info("JIRA issue {} not found in Airfocus - creating new item", jira_key)
+                
+                # Create new item - convert JiraItem back to dict for existing function
+                result = create_airfocus_item(workspace_id, jira_item.to_dict())
+                
+                if "error" in result:
+                    error_count += 1
+                    errors.append({"jira_key": jira_key, "action": "create", "error": result["error"]})
+                    logger.warning("Failed to create JIRA issue {}: {}", jira_key, result['error'])
+                else:
+                    success_count += 1
+                    created_count += 1
+                    logger.info("Successfully created Airfocus item for JIRA issue {}", jira_key)
+            
+        except Exception as e:
+            error_count += 1
+            error_msg = f"Exception during sync: {str(e)}"
+            errors.append({"jira_key": jira_key, "action": "unknown", "error": error_msg})
+            logger.error("Exception while syncing JIRA issue {}: {}", jira_key, e)
+    
+    return {
+        "success_count": success_count,
+        "error_count": error_count,
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "errors": errors
+    }
+
+
 def sync_jira_to_airfocus(jira_data_file: str, workspace_id: str) -> Dict[str, Any]:
     """
     Synchronize JIRA issues to Airfocus by creating new items and updating existing ones.
@@ -919,102 +1069,30 @@ def sync_jira_to_airfocus(jira_data_file: str, workspace_id: str) -> Dict[str, A
         dict: Summary of the synchronization process including success and failure counts.
     """
     try:
-        # Read JIRA data from JSON file
-        with open(jira_data_file, 'r', encoding='utf-8') as f:
-            jira_data = json.load(f)
+        # Load and prepare data using helper function
+        jira_items, airfocus_by_jira_key, sync_stats = _load_and_prepare_sync_data(
+            jira_data_file, workspace_id
+        )
         
-        # Read Airfocus data from JSON file
-        airfocus_data_file = "./data/airfocus_data.json"
-        airfocus_data = {}
-        if os.path.exists(airfocus_data_file):
-            with open(airfocus_data_file, 'r', encoding='utf-8') as f:
-                airfocus_data = json.load(f)
-        else:
-            logger.warning("Airfocus data file not found at {}. All items will be treated as new.", airfocus_data_file)
-        
-        issues = jira_data.get("issues", [])
-        airfocus_items = airfocus_data.get("items", [])
-        total_issues = len(issues)
-        
-        logger.info("Starting synchronization of {} JIRA issues to Airfocus workspace {}", total_issues, workspace_id)
-        logger.info("Found {} existing Airfocus items for comparison", len(airfocus_items))
-        
-        # Create a mapping of JIRA-KEY to Airfocus item for quick lookup
-        airfocus_by_jira_key = {}
-        for item_data in airfocus_items:
-            fields = item_data.get("fields", {})
-            jira_key_field = fields.get("JIRA-KEY", {})
-            if jira_key_field and "value" in jira_key_field:
-                jira_key = jira_key_field["value"]
-                if jira_key:
-                    # Convert to AirfocusItem for easier handling
-                    airfocus_item = AirfocusItem.from_airfocus_data(item_data)
-                    airfocus_by_jira_key[jira_key] = airfocus_item
-        
-        logger.debug("Built lookup mapping for {} Airfocus items with JIRA keys", len(airfocus_by_jira_key))
-        
-        success_count = 0
-        error_count = 0
-        updated_count = 0
-        created_count = 0
-        errors = []
-        
-        for issue in issues:
-            jira_key = issue.get("key", "Unknown")
-            
-            try:
-                # Check if item exists in Airfocus
-                existing_item = airfocus_by_jira_key.get(jira_key)
-                
-                if existing_item:
-                    # Item exists - always update it with JIRA data
-                    item_id = existing_item.item_id
-                    
-                    logger.info("JIRA issue {} - updating existing Airfocus item {}", jira_key, item_id)
-                    
-                    # Update existing item
-                    result = patch_airfocus_item(workspace_id, item_id, issue)
-                    
-                    if "error" in result:
-                        error_count += 1
-                        errors.append({"jira_key": jira_key, "action": "update", "error": result["error"]})
-                        logger.error("Failed to update JIRA issue {}: {}", jira_key, result['error'])
-                    else:
-                        success_count += 1
-                        updated_count += 1
-                        logger.info("Successfully updated Airfocus item for JIRA issue {}", jira_key)
-                else:
-                    # Item doesn't exist - create new one
-                    logger.info("JIRA issue {} not found in Airfocus - creating new item", jira_key)
-                    
-                    result = create_airfocus_item(workspace_id, issue)
-                    
-                    if "error" in result:
-                        error_count += 1
-                        errors.append({"jira_key": jira_key, "action": "create", "error": result["error"]})
-                        logger.warning("Failed to create JIRA issue {}: {}", jira_key, result['error'])
-                    else:
-                        success_count += 1
-                        created_count += 1
-                        logger.info("Successfully created Airfocus item for JIRA issue {}", jira_key)
-                
-            except Exception as e:
-                error_count += 1
-                error_msg = f"Exception during sync: {str(e)}"
-                errors.append({"jira_key": jira_key, "action": "unknown", "error": error_msg})
-                logger.error("Exception while syncing JIRA issue {}: {}", jira_key, e)
+        # Perform sync operations
+        results = _perform_sync_operations(
+            workspace_id, jira_items, airfocus_by_jira_key
+        )
         
         # Log summary
-        logger.info("Synchronization completed. Success: {}, Errors: {} (Created: {}, Updated: {})", 
-                   success_count, error_count, created_count, updated_count)
+        logger.info("Synchronization completed. Success: {}, Errors: {} (Created: {}, Updated: {}, Validation failures: {})", 
+                   results["success_count"], results["error_count"], 
+                   results["created_count"], results["updated_count"], sync_stats["validation_failures"])
         
         return {
-            "total_issues": total_issues,
-            "success_count": success_count,
-            "error_count": error_count,
-            "created_count": created_count,
-            "updated_count": updated_count,
-            "errors": errors
+            "total_issues": sync_stats["total_raw_issues"],
+            "processed_issues": sync_stats["processed_issues"],
+            "validation_failures": sync_stats["validation_failures"],
+            "success_count": results["success_count"],
+            "error_count": results["error_count"],
+            "created_count": results["created_count"],
+            "updated_count": results["updated_count"],
+            "errors": results["errors"]
         }
         
     except Exception as e:
@@ -1094,196 +1172,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# Enhanced functions to work with both JiraItem objects and dictionary data
 
-def create_airfocus_item_from_jira_object(workspace_id: str, jira_item: JiraItem) -> Dict[str, Any]:
-    """
-    Create an item in Airfocus based on a JiraItem object.
-    
-    This is the preferred method for new code as it provides better type safety
-    and validation.
-    
-    Args:
-        workspace_id (str): The Airfocus workspace ID where the item will be created.
-        jira_item (JiraItem): JiraItem object containing validated JIRA data
-        
-    Returns:
-        dict: Airfocus API response if successful, or error dictionary if failed.
-    """
-    # Validate the JIRA item first
-    validation_errors = jira_item.validate()
-    if validation_errors:
-        error_msg = f"JiraItem validation failed: {', '.join(validation_errors)}"
-        logger.error("Validation failed for JIRA issue {}: {}", jira_item.key, error_msg)
-        return {"error": error_msg}
-    
-    # Convert to dictionary format and use existing function
-    # This maintains backward compatibility while adding type safety
-    return create_airfocus_item(workspace_id, jira_item.to_dict())
-
-
-def patch_airfocus_item_from_jira_object(workspace_id: str, item_id: str, jira_item: JiraItem) -> Dict[str, Any]:
-    """
-    Update an existing item in Airfocus based on a JiraItem object.
-    
-    This is the preferred method for new code as it provides better type safety
-    and validation.
-    
-    Args:
-        workspace_id (str): The Airfocus workspace ID where the item exists.
-        item_id (str): The Airfocus item ID to update.
-        jira_item (JiraItem): JiraItem object containing validated JIRA data
-        
-    Returns:
-        dict: Airfocus API response if successful, or error dictionary if failed.
-    """
-    # Validate the JIRA item first  
-    validation_errors = jira_item.validate()
-    if validation_errors:
-        error_msg = f"JiraItem validation failed: {', '.join(validation_errors)}"
-        logger.error("Validation failed for JIRA issue {}: {}", jira_item.key, error_msg)
-        return {"error": error_msg}
-    
-    # Convert to dictionary format and use existing function
-    # This maintains backward compatibility while adding type safety
-    return patch_airfocus_item(workspace_id, item_id, jira_item.to_dict())
-
-
-def sync_jira_to_airfocus_enhanced(jira_data_file: str, workspace_id: str) -> Dict[str, Any]:
-    """
-    Enhanced synchronization of JIRA issues to Airfocus using JiraItem objects.
-    
-    This function provides better type safety, validation, and error handling
-    by using JiraItem objects instead of raw dictionaries.
-    
-    Args:
-        jira_data_file (str): Path to the JSON file containing JIRA issue data.
-        workspace_id (str): The Airfocus workspace ID where items will be created/updated.
-        
-    Returns:
-        dict: Summary of the synchronization process including success and failure counts.
-    """
-    try:
-        # Read JIRA data from JSON file
-        with open(jira_data_file, 'r', encoding='utf-8') as f:
-            jira_data = json.load(f)
-        
-        # Read Airfocus data from JSON file  
-        airfocus_data_file = "./data/airfocus_data.json"
-        airfocus_data = {}
-        if os.path.exists(airfocus_data_file):
-            with open(airfocus_data_file, 'r', encoding='utf-8') as f:
-                airfocus_data = json.load(f)
-        else:
-            logger.warning("Airfocus data file not found at {}. All items will be treated as new.", airfocus_data_file)
-        
-        # Convert raw issue data to JiraItem objects with validation
-        jira_issues = []
-        validation_failures = 0
-        
-        for issue_dict in jira_data.get("issues", []):
-            try:
-                jira_item = JiraItem.from_simplified_data(issue_dict)
-                validation_errors = jira_item.validate()
-                
-                if validation_errors:
-                    logger.warning("Skipping JIRA issue {} due to validation errors: {}", 
-                                 jira_item.key, ", ".join(validation_errors))
-                    validation_failures += 1
-                    continue
-                
-                jira_issues.append(jira_item)
-                
-            except Exception as e:
-                logger.error("Failed to create JiraItem from issue data {}: {}", 
-                           issue_dict.get("key", "Unknown"), e)
-                validation_failures += 1
-                continue
-        
-        logger.info("Successfully converted {} JIRA issues to JiraItem objects ({} validation failures)", 
-                   len(jira_issues), validation_failures)
-        
-        # Build Airfocus lookup mapping (same as before)
-        airfocus_items = airfocus_data.get("items", [])
-        airfocus_by_jira_key = {}
-        
-        for item_data in airfocus_items:
-            fields = item_data.get("fields", {})
-            jira_key_field = fields.get("JIRA-KEY", {})
-            if jira_key_field and "value" in jira_key_field:
-                jira_key = jira_key_field["value"]
-                if jira_key:
-                    airfocus_item = AirfocusItem.from_airfocus_data(item_data)
-                    airfocus_by_jira_key[jira_key] = airfocus_item
-        
-        logger.debug("Built lookup mapping for {} Airfocus items with JIRA keys", len(airfocus_by_jira_key))
-        
-        # Process each JiraItem
-        success_count = 0
-        error_count = 0
-        updated_count = 0
-        created_count = 0
-        errors = []
-        
-        for jira_item in jira_issues:
-            try:
-                # Check if item exists in Airfocus
-                existing_item = airfocus_by_jira_key.get(jira_item.key)
-                
-                if existing_item:
-                    # Item exists - update it with JIRA data
-                    item_id = existing_item.item_id
-                    
-                    logger.info("JIRA issue {} - updating existing Airfocus item {}", jira_item.key, item_id)
-                    
-                    # Use the enhanced function that takes JiraItem objects
-                    result = patch_airfocus_item_from_jira_object(workspace_id, item_id, jira_item)
-                    
-                    if "error" in result:
-                        error_count += 1
-                        errors.append({"jira_key": jira_item.key, "action": "update", "error": result["error"]})
-                        logger.error("Failed to update JIRA issue {}: {}", jira_item.key, result['error'])
-                    else:
-                        success_count += 1
-                        updated_count += 1
-                        logger.info("Successfully updated Airfocus item for JIRA issue {}", jira_item.key)
-                else:
-                    # Item doesn't exist - create new one
-                    logger.info("JIRA issue {} not found in Airfocus - creating new item", jira_item.key)
-                    
-                    # Use the enhanced function that takes JiraItem objects
-                    result = create_airfocus_item_from_jira_object(workspace_id, jira_item)
-                    
-                    if "error" in result:
-                        error_count += 1
-                        errors.append({"jira_key": jira_item.key, "action": "create", "error": result["error"]})
-                        logger.warning("Failed to create JIRA issue {}: {}", jira_item.key, result['error'])
-                    else:
-                        success_count += 1
-                        created_count += 1
-                        logger.info("Successfully created Airfocus item for JIRA issue {}", jira_item.key)
-                
-            except Exception as e:
-                error_count += 1
-                error_msg = f"Exception during sync: {str(e)}"
-                errors.append({"jira_key": jira_item.key, "action": "unknown", "error": error_msg})
-                logger.error("Exception while syncing JIRA issue {}: {}", jira_item.key, e)
-        
-        # Log summary
-        logger.info("Enhanced synchronization completed. Success: {}, Errors: {} (Created: {}, Updated: {}, Validation failures: {})", 
-                   success_count, error_count, created_count, updated_count, validation_failures)
-        
-        return {
-            "total_issues": len(jira_issues) + validation_failures,
-            "processed_issues": len(jira_issues), 
-            "validation_failures": validation_failures,
-            "success_count": success_count,
-            "error_count": error_count,
-            "created_count": created_count,
-            "updated_count": updated_count,
-            "errors": errors
-        }
-        
-    except Exception as e:
-        logger.error("Failed to read JIRA data file {}: {}", jira_data_file, e)
-        return {"error": f"Failed to read data file: {str(e)}"}
