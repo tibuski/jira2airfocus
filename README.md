@@ -20,16 +20,32 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items.
 
 2. **Create Configuration**
    
-   Copy `constants.py.example` to `constants.py` and update:
+   Copy `constants.py.example` to `constants.py` and update the key settings:
+   
+   **Basic Configuration:**
    ```python
    # JIRA Configuration
    JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
-   JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
+   JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"  # Your JIRA project key
    JIRA_PAT = "your_jira_token_here"
    
-   # Airfocus Configuration
-   AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
+   # Airfocus Configuration  
+   AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"  # From Airfocus URL
    AIRFOCUS_API_KEY = "your_airfocus_api_key_here"
+   ```
+   
+   **Optional Configuration:**
+   ```python
+   # Status Mapping (maps JIRA statuses to Airfocus statuses)
+   JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
+       "Draft": ["To Do", "Open"],
+       "In Progress": ["In Progress", "IN REFINEMENT"],
+       "Done": ["Done", "Cancelled"],
+       "On Hold": ["On hold"]
+   }
+   
+   # Team Assignment (automatically assign team to items)
+   TEAM_FIELD = {"YOUR_TEAM_FIELD_NAME": ["YOUR_TEAM_VALUE"]}
    ```
 
 ## Getting API Credentials

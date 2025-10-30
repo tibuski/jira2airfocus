@@ -9,11 +9,6 @@ JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
 # Documentation: https://developer.airfocus.com/endpoints.html#/Items
 AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
 
-# Airfocus Workspace Configuration
-# Your Airfocus workspace ID (found in the workspace URL)
-# Example: https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/items
-AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
-
 # Logging Configuration
 # Available levels: DEBUG, INFO, WARNING, ERROR
 # DEBUG - Detailed information for troubleshooting
@@ -34,6 +29,11 @@ SSL_VERIFY = False
 # JIRA Project Configuration
 # The project key of the JIRA project you want to sync
 JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
+
+# Airfocus Workspace Configuration
+# Your Airfocus workspace ID (found in the workspace URL)
+# Example: https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/items
+AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
 
 # Status Mapping Configuration
 # Maps JIRA statuses to Airfocus statuses when exact matches aren't found
