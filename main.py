@@ -19,6 +19,7 @@ from typing import Dict, List, Tuple, Optional, Set, Any, Union
 from loguru import logger
 
 import constants
+from airfocus_item import AirfocusItem
 
 # Conditionally disable SSL warnings when certificate verification is disabled
 if not constants.SSL_VERIFY:
@@ -795,25 +796,19 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
     Returns:
         dict: Airfocus API response if successful, or error dictionary if failed.
     """
-    jira_key = issue_data.get("key", "")
+    # Create AirfocusItem from JIRA data
+    item = AirfocusItem.from_jira_issue(issue_data)
+    jira_key = item.jira_key
     
-    # Retrieve team field ID and value from constants
-    team_field_id = None
-    team_field_value = None
+    # Validate item data before API call
+    validation_errors = item.validate()
+    if validation_errors:
+        error_msg = f"Validation failed: {', '.join(validation_errors)}"
+        logger.error("Validation failed for JIRA issue {}: {}", jira_key, error_msg)
+        return {"error": error_msg}
     
-    if constants.TEAM_FIELD:
-        # Extract field name and value from constants.TEAM_FIELD
-        for field_name, field_values in constants.TEAM_FIELD.items():
-            team_field_id = get_airfocus_field_id(field_name)
-            if team_field_id:
-                team_field_value = field_values[0] if field_values else None
-                logger.info("Retrieved team field ID '{}' for field '{}' with value '{}'", team_field_id, field_name, team_field_value)
-                break
-            else:
-                logger.error("Team field '{}' not found in Airfocus field mappings", field_name)
-    
-    if not team_field_id:
-        logger.warning("No valid team field ID found, items will be created without team assignment")
+    # Generate payload using the item
+    payload = item.to_create_payload()
     
     # Construct Airfocus API endpoint URL
     url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items"
@@ -824,75 +819,24 @@ def create_airfocus_item(workspace_id: str, issue_data: Dict[str, Any]) -> Dict[
         "Content-Type": "application/vnd.airfocus.markdown+json"
     }
     
-    # Build enhanced description using helper function
-    markdown_content = build_markdown_description(issue_data)
-    
-    # Get field mappings using helper function
-    jira_key_field_id = get_field_mappings()
-    if not jira_key_field_id:
-        return {"error": "JIRA-KEY field ID not found"}
-    
-    # Prepare fields dictionary
-    fields_dict = {
-        jira_key_field_id: {
-            "text": issue_data.get("key", "")
-        }
-    }
-    
-    # Add team field if available
-    if team_field_id and team_field_value:
-        # Get the option ID for the team value
-        team_option_id = get_airfocus_field_option_id(field_name, team_field_value)
-        if team_option_id:
-            fields_dict[team_field_id] = {
-                "selection": [team_option_id]
-            }
-            logger.debug("Added team field {}: {} (option ID: {})", team_field_id, team_field_value, team_option_id)
-        else:
-            logger.error("Could not find option ID for team value '{}' in field '{}'", team_field_value, field_name)
-    
-    # Get status ID from JIRA status name using helper function
-    jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
-    jira_key = issue_data.get("key", "")
-    status_id = get_mapped_status_id(jira_status_name, jira_key)
-
-    # Map JIRA fields to Airfocus fields - format description with Markdown
-    airfocus_item = {
-        "name": issue_data.get("summary", ""),
-        "description": {
-            "markdown": markdown_content,
-            "richText": True
-        },
-        "statusId": status_id,
-        "color": "blue",  # Default color
-        "assigneeUserIds": [],  # Empty for now
-        "assigneeUserGroupIds": [],  # Empty for now
-        "order": 0,  # Default order
-        "fields": fields_dict
-    }
-    
-    logger.debug("Added JIRA key field {}: {}", jira_key_field_id, issue_data.get('key', ''))
-    
     logger.debug("Creating Airfocus item for JIRA issue {}", jira_key)
-    logger.debug("Payload: {}", json.dumps(airfocus_item, indent=2))
+    logger.debug("Payload: {}", json.dumps(payload, indent=2))
     
     try:
-        response = requests.post(url, headers=headers, json=airfocus_item, verify=constants.SSL_VERIFY)
-        jira_key = issue_data.get("key", "")
+        response = requests.post(url, headers=headers, json=payload, verify=constants.SSL_VERIFY)
         
         success, result = validate_api_response(response, f"Create Airfocus item for JIRA issue {jira_key}", [200, 201])
         if success:
-            team_info = f" with team field '{team_field_value}'" if team_field_id and team_field_value else ""
+            team_info = f" with team field '{item.team_field_value}'" if item.team_field_value else ""
             logger.info("Successfully created Airfocus item for JIRA issue {}{}", jira_key, team_info)
             return result
         else:
-            team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+            team_info = f" (attempted to set team field '{item.team_field_value}')" if item.team_field_value else ""
             logger.error("Failed to create Airfocus item for JIRA issue {}{}: {}", jira_key, team_info, result.get('error', 'Unknown error'))
             return result
     
     except Exception as e:
-        jira_key = issue_data.get("key", "")
-        team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+        team_info = f" (attempted to set team field '{item.team_field_value}')" if item.team_field_value else ""
         logger.error("Exception occurred while creating Airfocus item for JIRA issue {}{}: {}", jira_key, team_info, e)
         return {"error": f"Exception occurred: {str(e)}"}
 
@@ -921,25 +865,19 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
     Returns:
         dict: Airfocus API response if successful, or error dictionary if failed.
     """
-    jira_key = issue_data.get("key", "")
+    # Create AirfocusItem from JIRA data
+    item = AirfocusItem.from_jira_issue(issue_data)
+    jira_key = item.jira_key
     
-    # Retrieve team field ID and value from constants
-    team_field_id = None
-    team_field_value = None
+    # Validate item data before API call
+    validation_errors = item.validate()
+    if validation_errors:
+        error_msg = f"Validation failed: {', '.join(validation_errors)}"
+        logger.error("Validation failed for JIRA issue {} update: {}", jira_key, error_msg)
+        return {"error": error_msg}
     
-    if constants.TEAM_FIELD:
-        # Extract field name and value from constants.TEAM_FIELD
-        for field_name, field_values in constants.TEAM_FIELD.items():
-            team_field_id = get_airfocus_field_id(field_name)
-            if team_field_id:
-                team_field_value = field_values[0] if field_values else None
-                logger.debug("Retrieved team field ID '{}' for field '{}' with value '{}' for update", team_field_id, field_name, team_field_value)
-                break
-            else:
-                logger.error("Team field '{}' not found in Airfocus field mappings for update", field_name)
-    
-    if not team_field_id:
-        logger.debug("No valid team field ID found for update, item will be updated without team assignment")
+    # Generate patch operations using the item
+    patch_operations = item.to_patch_payload()
     
     # Construct Airfocus API endpoint URL for PATCH
     url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items/{item_id}"
@@ -950,107 +888,24 @@ def patch_airfocus_item(workspace_id: str, item_id: str, issue_data: Dict[str, A
         "Content-Type": "application/vnd.airfocus.markdown+json"
     }
     
-    # Build enhanced description using helper function
-    markdown_content = build_markdown_description(issue_data)
-    
-    # Get field mappings using helper function
-    jira_key_field_id = get_field_mappings()
-    if not jira_key_field_id:
-        return {"error": "JIRA-KEY field ID not found"}
-    
-    # Prepare fields dictionary
-    fields_dict = {
-        jira_key_field_id: {
-            "text": issue_data.get("key", "")
-        }
-    }
-    
-    # Get status ID from JIRA status name using helper function
-    jira_status_name = issue_data.get("status", {}).get("name", "") if issue_data.get("status") else ""
-    jira_key = issue_data.get("key", "")
-    status_id = get_mapped_status_id(jira_status_name, jira_key)
-    
-    # Create JSON Patch operations to update the item
-    # JSON Patch format: [{"op": "replace", "path": "/fieldName", "value": "newValue"}]
-    patch_operations = []
-    
-    # Update name (summary)
-    patch_operations.append({
-        "op": "replace",
-        "path": "/name",
-        "value": issue_data.get("summary", "")
-    })
-    
-    # Update description with Markdown (as string when using markdown media type)
-    patch_operations.append({
-        "op": "replace",
-        "path": "/description",
-        "value": markdown_content
-    })
-    
-    # Update status if we have one
-    if status_id:
-        patch_operations.append({
-            "op": "replace",
-            "path": "/statusId",
-            "value": status_id
-        })
-    
-    # Update JIRA-KEY field
-    patch_operations.append({
-        "op": "replace",
-        "path": f"/fields/{jira_key_field_id}",
-        "value": {
-            "text": issue_data.get("key", "")
-        }
-    })
-    
-    # Update team field if available
-    if team_field_id and team_field_value:
-        # Get the option ID for the team value (need to get field name from constants again)
-        team_field_name = None
-        for field_name, _ in constants.TEAM_FIELD.items():
-            team_field_name = field_name
-            break
-        
-        if team_field_name:
-            team_option_id = get_airfocus_field_option_id(team_field_name, team_field_value)
-            if team_option_id:
-                patch_operations.append({
-                    "op": "replace",
-                    "path": f"/fields/{team_field_id}",
-                    "value": {
-                        "selection": [team_option_id]
-                    }
-                })
-                logger.debug("Updated team field {}: {} (option ID: {})", team_field_id, team_field_value, team_option_id)
-            else:
-                logger.error("Could not find option ID for team value '{}' in field '{}' for update", team_field_value, team_field_name)
-        else:
-            logger.error("Could not determine team field name for update")
-    
-    logger.debug("Updated JIRA key field {}: {}", jira_key_field_id, issue_data.get('key', ''))
-    
     logger.debug("Updating Airfocus item {} for JIRA issue {} with {} patch operations", item_id, jira_key, len(patch_operations))
     logger.debug("Patch operations: {}", json.dumps(patch_operations, indent=2))
     
     try:
         response = requests.patch(url, headers=headers, json=patch_operations, verify=constants.SSL_VERIFY)
-        jira_key = issue_data.get("key", "")
         
         success, result = validate_api_response(response, f"Update Airfocus item {item_id} for JIRA issue {jira_key}", [200, 201])
         if success:
-            team_info = f" with team field '{team_field_value}'" if team_field_id and team_field_value else ""
+            team_info = f" with team field '{item.team_field_value}'" if item.team_field_value else ""
             logger.info("Successfully updated Airfocus item {} for JIRA issue {}{}", item_id, jira_key, team_info)
             return result
         else:
-            team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+            team_info = f" (attempted to set team field '{item.team_field_value}')" if item.team_field_value else ""
             logger.error("Failed to update Airfocus item {} for JIRA issue {}{}: {}", item_id, jira_key, team_info, result.get('error', 'Unknown error'))
             return result
     
     except Exception as e:
-        jira_key = issue_data.get("key", "")
-        team_info = f" (attempted to set team field '{team_field_value}')" if team_field_id and team_field_value else ""
+        team_info = f" (attempted to set team field '{item.team_field_value}')" if item.team_field_value else ""
         logger.error("Exception occurred while updating Airfocus item {} for JIRA issue {}{}: {}", item_id, jira_key, team_info, e)
         return {"error": f"Exception occurred: {str(e)}"}
 
@@ -1144,13 +999,15 @@ def sync_jira_to_airfocus(jira_data_file: str, workspace_id: str) -> Dict[str, A
         
         # Create a mapping of JIRA-KEY to Airfocus item for quick lookup
         airfocus_by_jira_key = {}
-        for item in airfocus_items:
-            fields = item.get("fields", {})
+        for item_data in airfocus_items:
+            fields = item_data.get("fields", {})
             jira_key_field = fields.get("JIRA-KEY", {})
             if jira_key_field and "value" in jira_key_field:
                 jira_key = jira_key_field["value"]
                 if jira_key:
-                    airfocus_by_jira_key[jira_key] = item
+                    # Convert to AirfocusItem for easier handling
+                    airfocus_item = AirfocusItem.from_airfocus_data(item_data)
+                    airfocus_by_jira_key[jira_key] = airfocus_item
         
         logger.debug("Built lookup mapping for {} Airfocus items with JIRA keys", len(airfocus_by_jira_key))
         
@@ -1169,7 +1026,7 @@ def sync_jira_to_airfocus(jira_data_file: str, workspace_id: str) -> Dict[str, A
                 
                 if existing_item:
                     # Item exists - always update it with JIRA data
-                    item_id = existing_item.get("id")
+                    item_id = existing_item.item_id
                     
                     logger.info("JIRA issue {} - updating existing Airfocus item {}", jira_key, item_id)
                     
