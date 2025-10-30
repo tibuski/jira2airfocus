@@ -20,6 +20,7 @@ from loguru import logger
 
 import constants
 from airfocus_item import AirfocusItem
+from jira_item import JiraItem
 
 # Conditionally disable SSL warnings when certificate verification is disabled
 if not constants.SSL_VERIFY:
@@ -66,42 +67,18 @@ def build_markdown_description(issue_data: Dict[str, Any]) -> str:
     """
     Build enhanced Markdown description from JIRA issue data.
     
+    DEPRECATED: This function is kept for backward compatibility.
+    New code should use JiraItem.build_markdown_description() instead.
+    
     Args:
         issue_data (dict): JIRA issue data containing url, key, assignee, description, attachments
         
     Returns:
         str: Formatted Markdown content for Airfocus description
     """
-    jira_url = issue_data.get("url", "")
-    jira_key = issue_data.get("key", "")
-    assignee = issue_data.get("assignee")
-    attachments = issue_data.get("attachments", [])
-    
-    markdown_parts = []
-    
-    # Add JIRA Issue link
-    markdown_parts.append(f"**JIRA Issue:** [**{jira_key}**]({jira_url})")
-    
-    # Add assignee if available
-    if assignee and assignee.get("displayName"):
-        assignee_text = assignee['displayName']
-        if assignee.get("emailAddress"):
-            assignee_text += f" ({assignee['emailAddress']})"
-        markdown_parts.append(f"**JIRA Assignee:** {assignee_text}")
-    
-    # Add description
-    jira_description = issue_data.get('description', 'No description provided in JIRA.')
-    markdown_parts.append(f"**JIRA Description:**\n\n{jira_description}")
-    
-    # Add attachments if there are any
-    if attachments:
-        markdown_parts.append("**JIRA Attachments:**")
-        for attachment in attachments:
-            filename = attachment.get("filename", "Unknown file")
-            attachment_url = attachment.get("url", "")
-            markdown_parts.append(f"- [{filename}]({attachment_url})")
-    
-    return "\n\n".join(markdown_parts)
+    # Convert to JiraItem and use its method for consistency
+    jira_item = JiraItem.from_simplified_data(issue_data)
+    return jira_item.build_markdown_description()
 
 
 def validate_api_response(response: requests.Response, operation_name: str, expected_status_codes: Optional[List[int]] = None) -> Tuple[bool, Dict[str, Any]]:
@@ -296,51 +273,18 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
             # Extract base URL from JIRA_REST_URL (remove /rest/api/latest)
             base_url = constants.JIRA_REST_URL.replace("/rest/api/latest", "")
             
-            # Process attachments if present - only keep URLs for linking
-            attachments = fields.get("attachment", [])
-            attachment_list = []
-            for attachment in attachments:
-                attachment_info = {
-                    "filename": attachment.get("filename", ""),
-                    "url": attachment.get("content", ""),
-                    "thumbnail": attachment.get("thumbnail", "") if attachment.get("thumbnail") else None
-                }
-                attachment_list.append(attachment_info)
+            # Create JiraItem from the raw API data
+            jira_item = JiraItem.from_jira_api_data(issue, project_key, base_url)
             
-            # Process the updated timestamp - remove .000+ suffix and timezone
-            raw_updated = fields.get("updated", "")
-            clean_updated = ""
-            if raw_updated:
-                # Remove .000 milliseconds and timezone info to get standard format
-                # Convert "2025-05-09T12:05:52.000+0200" to "2025-05-09T12:05:52"
-                clean_updated = re.sub(r'\.000\+\d{4}$', '', raw_updated)
+            # Validate the item
+            validation_errors = jira_item.validate()
+            if validation_errors:
+                logger.warning("Validation issues for JIRA issue {}: {}", issue_key, ", ".join(validation_errors))
             
-            # Create simplified issue object with only needed data
-            simplified_issue = {
-                "key": issue_key,
-                "url": f"{base_url}/projects/{project_key}/issues/{issue_key}",
-                "summary": fields.get("summary", ""),
-                "description": fields.get("description", ""),
-                "status": {
-                    "name": fields.get("status", {}).get("name", ""),
-                    "id": fields.get("status", {}).get("id", ""),
-                    "statusCategory": {
-                        "key": fields.get("status", {}).get("statusCategory", {}).get("key", ""),
-                        "name": fields.get("status", {}).get("statusCategory", {}).get("name", "")
-                    } if fields.get("status", {}).get("statusCategory") else None
-                } if fields.get("status") else None,
-                "assignee": {
-                    "displayName": fields.get("assignee", {}).get("displayName", ""),
-                    "emailAddress": fields.get("assignee", {}).get("emailAddress", ""),
-                    "accountId": fields.get("assignee", {}).get("accountId", "")
-                } if fields.get("assignee") else None,
-                "attachments": attachment_list,
-                "updated": clean_updated
-            }
-            
-            logger.debug("Processed issue: {}", simplified_issue['url'])
+            logger.debug("Processed issue: {}", jira_item.url)
 
-            all_issues.append(simplified_issue)
+            # Convert to dictionary format for backward compatibility with existing code
+            all_issues.append(jira_item.to_dict())
         
         # Get total count from first response
         if total_issues is None:
@@ -1151,3 +1095,197 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# Enhanced functions to work with both JiraItem objects and dictionary data
+
+def create_airfocus_item_from_jira_object(workspace_id: str, jira_item: JiraItem) -> Dict[str, Any]:
+    """
+    Create an item in Airfocus based on a JiraItem object.
+    
+    This is the preferred method for new code as it provides better type safety
+    and validation.
+    
+    Args:
+        workspace_id (str): The Airfocus workspace ID where the item will be created.
+        jira_item (JiraItem): JiraItem object containing validated JIRA data
+        
+    Returns:
+        dict: Airfocus API response if successful, or error dictionary if failed.
+    """
+    # Validate the JIRA item first
+    validation_errors = jira_item.validate()
+    if validation_errors:
+        error_msg = f"JiraItem validation failed: {', '.join(validation_errors)}"
+        logger.error("Validation failed for JIRA issue {}: {}", jira_item.key, error_msg)
+        return {"error": error_msg}
+    
+    # Convert to dictionary format and use existing function
+    # This maintains backward compatibility while adding type safety
+    return create_airfocus_item(workspace_id, jira_item.to_dict())
+
+
+def patch_airfocus_item_from_jira_object(workspace_id: str, item_id: str, jira_item: JiraItem) -> Dict[str, Any]:
+    """
+    Update an existing item in Airfocus based on a JiraItem object.
+    
+    This is the preferred method for new code as it provides better type safety
+    and validation.
+    
+    Args:
+        workspace_id (str): The Airfocus workspace ID where the item exists.
+        item_id (str): The Airfocus item ID to update.
+        jira_item (JiraItem): JiraItem object containing validated JIRA data
+        
+    Returns:
+        dict: Airfocus API response if successful, or error dictionary if failed.
+    """
+    # Validate the JIRA item first  
+    validation_errors = jira_item.validate()
+    if validation_errors:
+        error_msg = f"JiraItem validation failed: {', '.join(validation_errors)}"
+        logger.error("Validation failed for JIRA issue {}: {}", jira_item.key, error_msg)
+        return {"error": error_msg}
+    
+    # Convert to dictionary format and use existing function
+    # This maintains backward compatibility while adding type safety
+    return patch_airfocus_item(workspace_id, item_id, jira_item.to_dict())
+
+
+def sync_jira_to_airfocus_enhanced(jira_data_file: str, workspace_id: str) -> Dict[str, Any]:
+    """
+    Enhanced synchronization of JIRA issues to Airfocus using JiraItem objects.
+    
+    This function provides better type safety, validation, and error handling
+    by using JiraItem objects instead of raw dictionaries.
+    
+    Args:
+        jira_data_file (str): Path to the JSON file containing JIRA issue data.
+        workspace_id (str): The Airfocus workspace ID where items will be created/updated.
+        
+    Returns:
+        dict: Summary of the synchronization process including success and failure counts.
+    """
+    try:
+        # Read JIRA data from JSON file
+        with open(jira_data_file, 'r', encoding='utf-8') as f:
+            jira_data = json.load(f)
+        
+        # Read Airfocus data from JSON file  
+        airfocus_data_file = "./data/airfocus_data.json"
+        airfocus_data = {}
+        if os.path.exists(airfocus_data_file):
+            with open(airfocus_data_file, 'r', encoding='utf-8') as f:
+                airfocus_data = json.load(f)
+        else:
+            logger.warning("Airfocus data file not found at {}. All items will be treated as new.", airfocus_data_file)
+        
+        # Convert raw issue data to JiraItem objects with validation
+        jira_issues = []
+        validation_failures = 0
+        
+        for issue_dict in jira_data.get("issues", []):
+            try:
+                jira_item = JiraItem.from_simplified_data(issue_dict)
+                validation_errors = jira_item.validate()
+                
+                if validation_errors:
+                    logger.warning("Skipping JIRA issue {} due to validation errors: {}", 
+                                 jira_item.key, ", ".join(validation_errors))
+                    validation_failures += 1
+                    continue
+                
+                jira_issues.append(jira_item)
+                
+            except Exception as e:
+                logger.error("Failed to create JiraItem from issue data {}: {}", 
+                           issue_dict.get("key", "Unknown"), e)
+                validation_failures += 1
+                continue
+        
+        logger.info("Successfully converted {} JIRA issues to JiraItem objects ({} validation failures)", 
+                   len(jira_issues), validation_failures)
+        
+        # Build Airfocus lookup mapping (same as before)
+        airfocus_items = airfocus_data.get("items", [])
+        airfocus_by_jira_key = {}
+        
+        for item_data in airfocus_items:
+            fields = item_data.get("fields", {})
+            jira_key_field = fields.get("JIRA-KEY", {})
+            if jira_key_field and "value" in jira_key_field:
+                jira_key = jira_key_field["value"]
+                if jira_key:
+                    airfocus_item = AirfocusItem.from_airfocus_data(item_data)
+                    airfocus_by_jira_key[jira_key] = airfocus_item
+        
+        logger.debug("Built lookup mapping for {} Airfocus items with JIRA keys", len(airfocus_by_jira_key))
+        
+        # Process each JiraItem
+        success_count = 0
+        error_count = 0
+        updated_count = 0
+        created_count = 0
+        errors = []
+        
+        for jira_item in jira_issues:
+            try:
+                # Check if item exists in Airfocus
+                existing_item = airfocus_by_jira_key.get(jira_item.key)
+                
+                if existing_item:
+                    # Item exists - update it with JIRA data
+                    item_id = existing_item.item_id
+                    
+                    logger.info("JIRA issue {} - updating existing Airfocus item {}", jira_item.key, item_id)
+                    
+                    # Use the enhanced function that takes JiraItem objects
+                    result = patch_airfocus_item_from_jira_object(workspace_id, item_id, jira_item)
+                    
+                    if "error" in result:
+                        error_count += 1
+                        errors.append({"jira_key": jira_item.key, "action": "update", "error": result["error"]})
+                        logger.error("Failed to update JIRA issue {}: {}", jira_item.key, result['error'])
+                    else:
+                        success_count += 1
+                        updated_count += 1
+                        logger.info("Successfully updated Airfocus item for JIRA issue {}", jira_item.key)
+                else:
+                    # Item doesn't exist - create new one
+                    logger.info("JIRA issue {} not found in Airfocus - creating new item", jira_item.key)
+                    
+                    # Use the enhanced function that takes JiraItem objects
+                    result = create_airfocus_item_from_jira_object(workspace_id, jira_item)
+                    
+                    if "error" in result:
+                        error_count += 1
+                        errors.append({"jira_key": jira_item.key, "action": "create", "error": result["error"]})
+                        logger.warning("Failed to create JIRA issue {}: {}", jira_item.key, result['error'])
+                    else:
+                        success_count += 1
+                        created_count += 1
+                        logger.info("Successfully created Airfocus item for JIRA issue {}", jira_item.key)
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f"Exception during sync: {str(e)}"
+                errors.append({"jira_key": jira_item.key, "action": "unknown", "error": error_msg})
+                logger.error("Exception while syncing JIRA issue {}: {}", jira_item.key, e)
+        
+        # Log summary
+        logger.info("Enhanced synchronization completed. Success: {}, Errors: {} (Created: {}, Updated: {}, Validation failures: {})", 
+                   success_count, error_count, created_count, updated_count, validation_failures)
+        
+        return {
+            "total_issues": len(jira_issues) + validation_failures,
+            "processed_issues": len(jira_issues), 
+            "validation_failures": validation_failures,
+            "success_count": success_count,
+            "error_count": error_count,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "errors": errors
+        }
+        
+    except Exception as e:
+        logger.error("Failed to read JIRA data file {}: {}", jira_data_file, e)
+        return {"error": f"Failed to read data file: {str(e)}"}
