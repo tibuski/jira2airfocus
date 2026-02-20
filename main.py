@@ -42,23 +42,46 @@ logger.add(
 # Console Logging
 logger.add(sys.stderr, level=constants.LOGGING_LEVEL, colorize=True)
 
-# Authentication credentials from constants
-JIRA_PAT = constants.JIRA_PAT
-AIRFOCUS_API_KEY = constants.AIRFOCUS_API_KEY
-
-# Do NOT log secrets. Log only presence to avoid leaking credentials.
-if JIRA_PAT and constants.JIRA_PAT != "your-jira-personal-access-token-here":
-    logger.debug("JIRA_PAT is set.")
-else:
-    logger.warning("JIRA_PAT is not set.")
-
-if AIRFOCUS_API_KEY and constants.AIRFOCUS_API_KEY != "your-airfocus-api-key-here":
-    logger.debug("AIRFOCUS_API_KEY is set.")
-else:
-    logger.warning("AIRFOCUS_API_KEY is not set.")
-
 
 # Helper Functions
+
+
+def validate_constants() -> List[str]:
+    """
+    Validate configuration constants at startup.
+
+    Returns:
+        List of validation error messages (empty if all valid)
+    """
+    errors = []
+
+    if not constants.JIRA_REST_URL or not constants.JIRA_REST_URL.startswith("http"):
+        errors.append("JIRA_REST_URL must be a valid URL")
+
+    if not constants.AIRFOCUS_REST_URL or not constants.AIRFOCUS_REST_URL.startswith(
+        "http"
+    ):
+        errors.append("AIRFOCUS_REST_URL must be a valid URL")
+
+    if not constants.JIRA_PROJECT_KEY or not constants.JIRA_PROJECT_KEY.strip():
+        errors.append("JIRA_PROJECT_KEY is required")
+
+    if (
+        not constants.AIRFOCUS_WORKSPACE_ID
+        or not constants.AIRFOCUS_WORKSPACE_ID.strip()
+    ):
+        errors.append("AIRFOCUS_WORKSPACE_ID is required")
+
+    placeholder_pat = "your-jira-personal-access-token-here"
+    placeholder_af = "your-airfocus-api-key-here"
+
+    if not constants.JIRA_PAT or constants.JIRA_PAT == placeholder_pat:
+        errors.append("JIRA_PAT is not set (found placeholder value)")
+
+    if not constants.AIRFOCUS_API_KEY or constants.AIRFOCUS_API_KEY == placeholder_af:
+        errors.append("AIRFOCUS_API_KEY is not set (found placeholder value)")
+
+    return errors
 
 
 def validate_api_response(
@@ -140,7 +163,7 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
 
     # Set up authentication headers
     headers = {
-        "Authorization": f"Bearer {JIRA_PAT}",
+        "Authorization": f"Bearer {constants.JIRA_PAT}",
         "Content-Type": "application/json",
     }
 
@@ -313,7 +336,7 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
 
     # Set up authentication headers for Airfocus
     headers = {
-        "Authorization": f"Bearer {AIRFOCUS_API_KEY}",
+        "Authorization": f"Bearer {constants.AIRFOCUS_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -510,7 +533,7 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
 
     # Set up authentication headers
     headers = {
-        "Authorization": f"Bearer {AIRFOCUS_API_KEY}",
+        "Authorization": f"Bearer {constants.AIRFOCUS_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -669,7 +692,7 @@ def create_airfocus_item(workspace_id: str, jira_item: JiraItem) -> Dict[str, An
 
     # Set up authentication headers for Airfocus with Markdown support
     headers = {
-        "Authorization": f"Bearer {AIRFOCUS_API_KEY}",
+        "Authorization": f"Bearer {constants.AIRFOCUS_API_KEY}",
         "Content-Type": "application/vnd.airfocus.markdown+json",
     }
 
@@ -763,7 +786,7 @@ def patch_airfocus_item(
 
     # Set up authentication headers for Airfocus with Markdown support
     headers = {
-        "Authorization": f"Bearer {AIRFOCUS_API_KEY}",
+        "Authorization": f"Bearer {constants.AIRFOCUS_API_KEY}",
         "Content-Type": "application/vnd.airfocus.markdown+json",
     }
 
@@ -827,77 +850,6 @@ def patch_airfocus_item(
             e,
         )
         return {"error": f"Exception occurred: {str(e)}"}
-
-
-def get_airfocus_field_option_id(field_name: str, option_name: str) -> Optional[str]:
-    """
-    Get a specific option ID from a select field in the saved Airfocus fields data.
-
-    Args:
-        field_name (str): The name of the field to search in.
-        option_name (str): The name of the option to retrieve the ID for.
-
-    Returns:
-        str: The option ID for the specified option, or None if not found.
-    """
-    try:
-        filepath = f"{constants.DATA_DIR}/airfocus_fields.json"
-
-        # Check if file exists
-        if not os.path.exists(filepath):
-            logger.warning(
-                "Airfocus fields file not found at {}. Run get_airfocus_field_data() first.",
-                filepath,
-            )
-            return None
-
-        # Read the field data
-        with open(filepath, "r", encoding="utf-8") as f:
-            field_data = json.load(f)
-
-        # Find the field by name
-        fields = field_data.get("fields", [])
-        for field in fields:
-            if field.get("name") == field_name:
-                # Check if it's a select field with options
-                if field.get("typeId") == "select":
-                    options = field.get("settings", {}).get("options", [])
-                    for option in options:
-                        if option.get("name") == option_name:
-                            option_id = option.get("id")
-                            logger.debug(
-                                "Found option '{}' in field '{}' with ID: {}",
-                                option_name,
-                                field_name,
-                                option_id,
-                            )
-                            return option_id
-
-                    logger.warning(
-                        "Option '{}' not found in select field '{}'",
-                        option_name,
-                        field_name,
-                    )
-                    logger.debug(
-                        "Available options in '{}': {}",
-                        field_name,
-                        [opt.get("name") for opt in options],
-                    )
-                    return None
-                else:
-                    logger.error(
-                        "Field '{}' is not a select field (type: {})",
-                        field_name,
-                        field.get("typeId"),
-                    )
-                    return None
-
-        logger.warning("Field '{}' not found in saved field data", field_name)
-        return None
-
-    except Exception as e:
-        logger.error("Exception occurred while reading field option data: {}", e)
-        return None
 
 
 def _load_and_prepare_sync_data(
@@ -1210,9 +1162,16 @@ def main() -> None:
     Initializes the application by logging configuration details and
     starting the data synchronization process.
     """
-    # Log configuration information for debugging
+    validation_errors = validate_constants()
+    if validation_errors:
+        for error in validation_errors:
+            logger.error("Configuration error: {}", error)
+        logger.error("Please fix the errors in constants.py and try again.")
+        sys.exit(1)
+
     logger.info("JIRA REST URL: {}", constants.JIRA_REST_URL)
     logger.info("Airfocus REST URL: {}", constants.AIRFOCUS_REST_URL)
+    logger.debug("Credentials are configured.")
 
     # Get Airfocus field data and save to file
     logger.info("Fetching Airfocus field data...")
