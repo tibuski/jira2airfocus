@@ -52,3 +52,8 @@ JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
 # Value: List of team values to assign (first value will be used)
 # Example: {"Team": ["Alpha Team"]} will set the "Team" field to "Alpha Team"
 TEAM_FIELD = {"YOUR_TEAM_FIELD_NAME": ["YOUR_TEAM_VALUE"]}
+
+# Authentication Credentials
+# Update these with your actual credentials
+JIRA_PAT = "your-jira-personal-access-token-here"
+AIRFOCUS_API_KEY = "your-airfocus-api-key-here"
