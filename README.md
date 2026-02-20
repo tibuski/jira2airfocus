@@ -19,40 +19,14 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items.
    cd jira2airfocus
    ```
 
-2. **Create Virtual Environment**
+2. **Install Dependencies with uv**
    ```bash
-   python -m venv venv
-   ```
-   
-   **Activate Virtual Environment:**
-   ```powershell
-   # PowerShell
-   venv\Scripts\Activate.ps1
-   ```
-   ```bash
-   # Linux/macOS
-   source venv/bin/activate
+   uv sync
    ```
 
-3. **Install Dependencies**
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
-
-4. **Create Configuration Files**
-   
-   **API Credentials (.env file):**
-   Copy `.env.example` to `.env` and add your API credentials:
-   ```env
-   # JIRA Configuration
-   JIRA_PAT=your_jira_personal_access_token_here
-   
-   # Airfocus Configuration
-   AIRFOCUS_API_KEY=your_airfocus_api_key_here
-   ```
-   
-   **Main Configuration (constants.py):**
-   Copy `constants.py.example` to `constants.py` and update:
+3. **Configure the Application**
+    
+    Copy `constants.py.example` to `constants.py` and update with your credentials:
    ```python
    # JIRA Configuration
    JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
