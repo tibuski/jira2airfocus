@@ -254,11 +254,11 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
     # Save data to JSON file in ./data directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"jira_{project_key}_issues_{timestamp}.json"
-    filepath = f"./data/{filename}"
+    filepath = f"{constants.DATA_DIR}/{filename}"
 
     try:
         # Create data directory if it doesn't exist
-        os.makedirs("./data", exist_ok=True)
+        os.makedirs(constants.DATA_DIR, exist_ok=True)
 
         # Prepare final data structure
         final_data = {
@@ -273,7 +273,7 @@ def get_jira_project_data(project_key: str) -> Dict[str, Any]:
             json.dump(final_data, f, indent=2, ensure_ascii=False)
 
         # Also save to a standard filename for easy access by sync function
-        standard_filepath = "./data/jira_data.json"
+        standard_filepath = f"{constants.DATA_DIR}/jira_data.json"
         with open(standard_filepath, "w", encoding="utf-8") as f:
             json.dump(final_data, f, indent=2, ensure_ascii=False)
 
@@ -448,8 +448,8 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
 
         # Save to JSON file
         try:
-            os.makedirs("./data", exist_ok=True)
-            filepath = "./data/airfocus_fields.json"
+            os.makedirs(constants.DATA_DIR, exist_ok=True)
+            filepath = f"{constants.DATA_DIR}/airfocus_fields.json"
 
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(field_data, f, indent=2, ensure_ascii=False)
@@ -589,11 +589,11 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
         # Save data to JSON file in ./data directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"airfocus_{workspace_id}_items_{timestamp}.json"
-        filepath = f"./data/{filename}"
+        filepath = f"{constants.DATA_DIR}/{filename}"
 
         try:
             # Create data directory if it doesn't exist
-            os.makedirs("./data", exist_ok=True)
+            os.makedirs(constants.DATA_DIR, exist_ok=True)
 
             # Prepare final data structure
             final_data = {
@@ -608,7 +608,7 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
                 json.dump(final_data, f, indent=2, ensure_ascii=False)
 
             # Also save to a standard filename for easy access by sync function
-            standard_filepath = "./data/airfocus_data.json"
+            standard_filepath = f"{constants.DATA_DIR}/airfocus_data.json"
             with open(standard_filepath, "w", encoding="utf-8") as f:
                 json.dump(final_data, f, indent=2, ensure_ascii=False)
 
@@ -725,27 +725,6 @@ def create_airfocus_item(workspace_id: str, jira_item: JiraItem) -> Dict[str, An
         return {"error": f"Exception occurred: {str(e)}"}
 
 
-def create_airfocus_item_from_dict(
-    workspace_id: str, issue_data: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Create an item in Airfocus based on JIRA issue data dictionary.
-
-    DEPRECATED: Use create_airfocus_item() with JiraItem objects instead.
-    This function is kept for backward compatibility.
-
-    Args:
-        workspace_id (str): The Airfocus workspace ID where the item will be created.
-        issue_data (dict): Dictionary containing JIRA issue data
-
-    Returns:
-        dict: Airfocus API response if successful, or error dictionary if failed.
-    """
-    # Convert dict to JiraItem first, then use the new method
-    jira_item = JiraItem.from_simplified_data(issue_data)
-    return create_airfocus_item(workspace_id, jira_item)
-
-
 def patch_airfocus_item(
     workspace_id: str, item_id: str, jira_item: JiraItem
 ) -> Dict[str, Any]:
@@ -850,28 +829,6 @@ def patch_airfocus_item(
         return {"error": f"Exception occurred: {str(e)}"}
 
 
-def patch_airfocus_item_from_dict(
-    workspace_id: str, item_id: str, issue_data: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Update an existing item in Airfocus based on JIRA issue data dictionary.
-
-    DEPRECATED: Use patch_airfocus_item() with JiraItem objects instead.
-    This function is kept for backward compatibility.
-
-    Args:
-        workspace_id (str): The Airfocus workspace ID where the item exists.
-        item_id (str): The Airfocus item ID to update.
-        issue_data (dict): Dictionary containing JIRA issue data
-
-    Returns:
-        dict: Airfocus API response if successful, or error dictionary if failed.
-    """
-    # Convert dict to JiraItem first, then use the new method
-    jira_item = JiraItem.from_simplified_data(issue_data)
-    return patch_airfocus_item(workspace_id, item_id, jira_item)
-
-
 def get_airfocus_field_option_id(field_name: str, option_name: str) -> Optional[str]:
     """
     Get a specific option ID from a select field in the saved Airfocus fields data.
@@ -884,7 +841,7 @@ def get_airfocus_field_option_id(field_name: str, option_name: str) -> Optional[
         str: The option ID for the specified option, or None if not found.
     """
     try:
-        filepath = "./data/airfocus_fields.json"
+        filepath = f"{constants.DATA_DIR}/airfocus_fields.json"
 
         # Check if file exists
         if not os.path.exists(filepath):
@@ -961,7 +918,7 @@ def _load_and_prepare_sync_data(
         jira_data = json.load(f)
 
     # Read Airfocus data from JSON file
-    airfocus_data_file = "./data/airfocus_data.json"
+    airfocus_data_file = f"{constants.DATA_DIR}/airfocus_data.json"
     airfocus_data = {}
     if os.path.exists(airfocus_data_file):
         with open(airfocus_data_file, "r", encoding="utf-8") as f:
@@ -1206,7 +1163,7 @@ def cleanup_old_json_files(pattern: str, keep_count: int = 10) -> None:
     """
     try:
         # Get all files matching the pattern in the data directory
-        file_pattern = f"./data/{pattern}"
+        file_pattern = f"{constants.DATA_DIR}/{pattern}"
         files = glob.glob(file_pattern)
 
         if len(files) <= keep_count:
@@ -1270,7 +1227,9 @@ def main() -> None:
     get_airfocus_project_data(constants.AIRFOCUS_WORKSPACE_ID)
 
     # Create items in Airfocus
-    sync_jira_to_airfocus("./data/jira_data.json", constants.AIRFOCUS_WORKSPACE_ID)
+    sync_jira_to_airfocus(
+        f"{constants.DATA_DIR}/jira_data.json", constants.AIRFOCUS_WORKSPACE_ID
+    )
 
     # Clean up old JSON files, keeping only the 10 most recent
     logger.info("Cleaning up old JSON files...")

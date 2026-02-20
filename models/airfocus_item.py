@@ -11,17 +11,23 @@ import json
 from loguru import logger
 
 import constants
+from .utils import (
+    get_airfocus_status_id,
+    get_mapped_status_id,
+    get_airfocus_field_id,
+    get_airfocus_field_option_id,
+)
 
 
 @dataclass
 class AirfocusItem:
     """
     Represents an Airfocus item with methods for creation and updates.
-    
+
     This class encapsulates all the logic for handling Airfocus items,
     including field mappings, payload generation, and validation.
     """
-    
+
     name: str
     jira_key: str
     description: str = ""
@@ -32,179 +38,56 @@ class AirfocusItem:
     assignee_user_ids: List[str] = None
     assignee_user_group_ids: List[str] = None
     order: int = 0
-    
+
     def __post_init__(self):
         """Initialize default values for mutable fields."""
         if self.assignee_user_ids is None:
             self.assignee_user_ids = []
         if self.assignee_user_group_ids is None:
             self.assignee_user_group_ids = []
-    
+
     @classmethod
-    def from_jira_item(cls, jira_item: 'JiraItem') -> 'AirfocusItem':
+    def from_jira_item(cls, jira_item: "JiraItem") -> "AirfocusItem":
         """
         Create AirfocusItem from JiraItem object.
-        
+
         Args:
             jira_item: JiraItem instance containing JIRA issue data
-            
+
         Returns:
             AirfocusItem instance populated with JIRA data
         """
         jira_key = jira_item.key
         name = jira_item.summary
         description = jira_item.build_markdown_description()
-        
-        # Get status mapping using local implementation to avoid circular import
+
+        # Get status mapping using shared utility function
         jira_status_name = jira_item.get_status_name()
-        status_id = cls._get_mapped_status_id(jira_status_name, jira_key)
-        
+        status_id = get_mapped_status_id(jira_status_name, jira_key)
+
         # Get team field value from constants
         team_field_value = None
         if constants.TEAM_FIELD:
             for field_name, field_values in constants.TEAM_FIELD.items():
                 team_field_value = field_values[0] if field_values else None
                 break
-        
+
         return cls(
             name=name,
             jira_key=jira_key,
             description=description,
             status_id=status_id,
-            team_field_value=team_field_value
+            team_field_value=team_field_value,
         )
 
-    @staticmethod
-    def _get_mapped_status_id(jira_status_name: str, jira_key: str) -> Optional[str]:
-        """
-        Get Airfocus status ID from JIRA status name using mappings and fallbacks.
-        
-        Args:
-            jira_status_name (str): JIRA status name to map
-            jira_key (str): JIRA issue key for logging purposes
-            
-        Returns:
-            str: Airfocus status ID, or None if no suitable status found
-        """
-        import json
-        import os
-        from loguru import logger
-        
-        if not jira_status_name:
-            return None
-        
-        # Try mappings from constants.py first
-        for airfocus_status, jira_variants in constants.JIRA_TO_AIRFOCUS_STATUS_MAPPING.items():
-            if jira_status_name in jira_variants:
-                status_id = AirfocusItem._get_airfocus_status_id(airfocus_status)
-                if status_id:
-                    logger.info("Mapped JIRA status '{}' to Airfocus status '{}'", jira_status_name, airfocus_status)
-                    return status_id
-        
-        # If no mapping found, warn and fall back to Draft
-        logger.warning("JIRA status '{}' not found in status mappings. Falling back to 'Draft' status.", jira_status_name)
-        status_id = AirfocusItem._get_airfocus_status_id("Draft")
-        
-        # If still no status found, get the default status
-        if not status_id:
-            try:
-                filepath = "./data/airfocus_fields.json"
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    field_data = json.load(f)
-                
-                # Look for default status or fall back to first available
-                statuses = field_data.get("statuses", [])
-                for status in statuses:
-                    if status.get("default", False):
-                        status_id = status.get("id")
-                        logger.info("Using default status '{}' for JIRA issue {}", status.get("name"), jira_key)
-                        return status_id
-                
-                # If no default found, use first available status
-                if statuses:
-                    status_id = statuses[0].get("id")
-                    logger.warning("No suitable status found for JIRA status '{}', using first available status '{}' for issue {}", 
-                                 jira_status_name, statuses[0].get("name"), jira_key)
-                    return status_id
-                    
-            except Exception as e:
-                logger.error("Failed to get default status: {}", e)
-        
-        if not status_id:
-            logger.error("Could not determine status ID for JIRA issue {}. Status will be left empty.", jira_key)
-        
-        return status_id
-
-    @staticmethod
-    def _get_airfocus_status_id(status_name: str) -> Optional[str]:
-        """
-        Get a specific status ID from the saved Airfocus fields data.
-        
-        Args:
-            status_name (str): The name of the status to retrieve the ID for.
-        
-        Returns:
-            str: The status ID for the specified status, or None if not found.
-        """
-        import json
-        import os
-        from loguru import logger
-        
-        try:
-            filepath = "./data/airfocus_fields.json"
-            
-            # Check if file exists
-            if not os.path.exists(filepath):
-                logger.warning("Airfocus fields file not found at {}. Run get_airfocus_field_data() first.", filepath)
-                return None
-            
-            # Read the field data
-            with open(filepath, 'r', encoding='utf-8') as f:
-                field_data = json.load(f)
-            
-            # Get status ID from mapping
-            status_mapping = field_data.get("status_mapping", {})
-            status_id = status_mapping.get(status_name)
-            
-            if status_id:
-                logger.debug("Found {} status ID: {}", status_name, status_id)
-                return status_id
-            else:
-                logger.warning("{} status not found in saved status mapping", status_name)
-                logger.debug("Available statuses: {}", list(status_mapping.keys()))
-                return None
-                
-        except Exception as e:
-            logger.error("Exception occurred while reading status data: {}", e)
-            return None
-
     @classmethod
-    def from_jira_issue(cls, issue_data: Dict[str, Any]) -> 'AirfocusItem':
-        """
-        Create AirfocusItem from JIRA issue data dictionary.
-        
-        DEPRECATED: Use from_jira_item() with JiraItem objects instead.
-        This method is kept for backward compatibility.
-        
-        Args:
-            issue_data: Dictionary containing JIRA issue data
-            
-        Returns:
-            AirfocusItem instance populated with JIRA data
-        """
-        # Convert dict to JiraItem first, then use the new method
-        from .jira_item import JiraItem
-        jira_item = JiraItem.from_simplified_data(issue_data)
-        return cls.from_jira_item(jira_item)
-    
-    @classmethod
-    def from_airfocus_data(cls, airfocus_data: Dict[str, Any]) -> 'AirfocusItem':
+    def from_airfocus_data(cls, airfocus_data: Dict[str, Any]) -> "AirfocusItem":
         """
         Create AirfocusItem from existing Airfocus API data.
-        
+
         Args:
             airfocus_data: Dictionary containing Airfocus item data
-            
+
         Returns:
             AirfocusItem instance populated with Airfocus data
         """
@@ -212,7 +95,7 @@ class AirfocusItem:
         fields = airfocus_data.get("fields", {})
         jira_key_field = fields.get("JIRA-KEY", {})
         jira_key = jira_key_field.get("value", "") if jira_key_field else ""
-        
+
         return cls(
             name=airfocus_data.get("name", ""),
             jira_key=jira_key,
@@ -222,205 +105,198 @@ class AirfocusItem:
             item_id=airfocus_data.get("id", ""),
             assignee_user_ids=airfocus_data.get("assigneeUserIds", []),
             assignee_user_group_ids=airfocus_data.get("assigneeUserGroupIds", []),
-            order=airfocus_data.get("order", 0)
+            order=airfocus_data.get("order", 0),
         )
-    
+
     def _get_jira_key_field_id(self) -> Optional[str]:
         """Get the JIRA-KEY field ID from field mappings."""
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        import main
-        return main.get_field_mappings()
-    
-    def _get_team_field_configuration(self) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        return get_airfocus_field_id("JIRA-KEY")
+
+    def _get_team_field_configuration(
+        self,
+    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Get team field configuration from constants.
-        
+
         Returns:
             tuple: (field_name, field_id, team_field_value)
         """
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        import main
-        
         if not constants.TEAM_FIELD:
             return None, None, None
-        
+
         for field_name, field_values in constants.TEAM_FIELD.items():
-            field_id = main.get_airfocus_field_id(field_name)
+            field_id = get_airfocus_field_id(field_name)
             if field_id:
                 team_value = field_values[0] if field_values else None
                 return field_name, field_id, team_value
             else:
-                logger.error("Team field '{}' not found in Airfocus field mappings", field_name)
-        
+                logger.error(
+                    "Team field '{}' not found in Airfocus field mappings", field_name
+                )
+
         return None, None, None
-    
+
     def _build_fields_dict(self) -> Dict[str, Dict[str, Any]]:
         """
         Build the fields dictionary for API payloads.
-        
+
         Returns:
             Dictionary containing field mappings for the API
         """
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        import main
-        
         fields_dict = {}
-        
+
         # Add JIRA-KEY field
         jira_key_field_id = self._get_jira_key_field_id()
         if jira_key_field_id:
-            fields_dict[jira_key_field_id] = {
-                "text": self.jira_key
-            }
+            fields_dict[jira_key_field_id] = {"text": self.jira_key}
         else:
             logger.error("JIRA-KEY field ID not found")
-        
+
         # Add team field if available
         if self.team_field_value:
             field_name, team_field_id, _ = self._get_team_field_configuration()
             if team_field_id and field_name:
-                team_option_id = main.get_airfocus_field_option_id(field_name, self.team_field_value)
+                team_option_id = get_airfocus_field_option_id(
+                    field_name, self.team_field_value
+                )
                 if team_option_id:
-                    fields_dict[team_field_id] = {
-                        "selection": [team_option_id]
-                    }
-                    logger.debug("Added team field {}: {} (option ID: {})", 
-                               team_field_id, self.team_field_value, team_option_id)
+                    fields_dict[team_field_id] = {"selection": [team_option_id]}
+                    logger.debug(
+                        "Added team field {}: {} (option ID: {})",
+                        team_field_id,
+                        self.team_field_value,
+                        team_option_id,
+                    )
                 else:
-                    logger.error("Could not find option ID for team value '{}' in field '{}'", 
-                               self.team_field_value, field_name)
-        
+                    logger.error(
+                        "Could not find option ID for team value '{}' in field '{}'",
+                        self.team_field_value,
+                        field_name,
+                    )
+
         return fields_dict
-    
+
     def to_create_payload(self) -> Dict[str, Any]:
         """
         Generate payload for POST /items API call.
-        
+
         Returns:
             Dictionary containing the complete payload for item creation
         """
         fields_dict = self._build_fields_dict()
-        
+
         payload = {
             "name": self.name,
-            "description": {
-                "markdown": self.description,
-                "richText": True
-            },
+            "description": {"markdown": self.description, "richText": True},
             "statusId": self.status_id,
             "color": self.color,
             "assigneeUserIds": self.assignee_user_ids,
             "assigneeUserGroupIds": self.assignee_user_group_ids,
             "order": self.order,
-            "fields": fields_dict
+            "fields": fields_dict,
         }
-        
+
         return payload
-    
+
     def to_patch_payload(self) -> List[Dict[str, Any]]:
         """
         Generate JSON Patch operations for PATCH /items/{id} API call.
-        
+
         Returns:
             List of JSON Patch operations
         """
-        import main
-        
         patch_operations = []
-        
+
         # Update name
-        patch_operations.append({
-            "op": "replace",
-            "path": "/name",
-            "value": self.name
-        })
-        
+        patch_operations.append({"op": "replace", "path": "/name", "value": self.name})
+
         # Update description (as string when using markdown media type)
-        patch_operations.append({
-            "op": "replace",
-            "path": "/description",
-            "value": self.description
-        })
-        
+        patch_operations.append(
+            {"op": "replace", "path": "/description", "value": self.description}
+        )
+
         # Update status if we have one
         if self.status_id:
-            patch_operations.append({
-                "op": "replace",
-                "path": "/statusId",
-                "value": self.status_id
-            })
-        
+            patch_operations.append(
+                {"op": "replace", "path": "/statusId", "value": self.status_id}
+            )
+
         # Update JIRA-KEY field
         jira_key_field_id = self._get_jira_key_field_id()
         if jira_key_field_id:
-            patch_operations.append({
-                "op": "replace",
-                "path": f"/fields/{jira_key_field_id}",
-                "value": {
-                    "text": self.jira_key
+            patch_operations.append(
+                {
+                    "op": "replace",
+                    "path": f"/fields/{jira_key_field_id}",
+                    "value": {"text": self.jira_key},
                 }
-            })
-        
+            )
+
         # Update team field if available
         if self.team_field_value:
             field_name, team_field_id, _ = self._get_team_field_configuration()
             if team_field_id and field_name:
-                team_option_id = main.get_airfocus_field_option_id(field_name, self.team_field_value)
+                team_option_id = get_airfocus_field_option_id(
+                    field_name, self.team_field_value
+                )
                 if team_option_id:
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": f"/fields/{team_field_id}",
-                        "value": {
-                            "selection": [team_option_id]
+                    patch_operations.append(
+                        {
+                            "op": "replace",
+                            "path": f"/fields/{team_field_id}",
+                            "value": {"selection": [team_option_id]},
                         }
-                    })
-                    logger.debug("Updated team field {}: {} (option ID: {})", 
-                               team_field_id, self.team_field_value, team_option_id)
+                    )
+                    logger.debug(
+                        "Updated team field {}: {} (option ID: {})",
+                        team_field_id,
+                        self.team_field_value,
+                        team_option_id,
+                    )
                 else:
-                    logger.error("Could not find option ID for team value '{}' in field '{}' for update", 
-                               self.team_field_value, field_name)
-        
+                    logger.error(
+                        "Could not find option ID for team value '{}' in field '{}' for update",
+                        self.team_field_value,
+                        field_name,
+                    )
+
         return patch_operations
-    
+
     def validate(self) -> List[str]:
         """
         Validate item data and return list of errors.
-        
+
         Returns:
             List of validation error messages (empty if valid)
         """
         errors = []
-        
+
         if not self.name.strip():
             errors.append("Item name cannot be empty")
-        
+
         if not self.jira_key.strip():
             errors.append("JIRA key cannot be empty")
-        
+
         # Check if JIRA-KEY field exists
         jira_key_field_id = self._get_jira_key_field_id()
         if not jira_key_field_id:
             errors.append("JIRA-KEY field ID not found in Airfocus field mappings")
-        
+
         # Validate team field configuration if specified
         if self.team_field_value:
             field_name, team_field_id, _ = self._get_team_field_configuration()
             if not team_field_id:
                 errors.append(f"Team field not found in Airfocus field mappings")
-        
+
         return errors
-    
+
     def __str__(self) -> str:
         """String representation of the item."""
         return f"AirfocusItem(jira_key='{self.jira_key}', name='{self.name[:50]}...', item_id='{self.item_id}')"
-    
+
     def __repr__(self) -> str:
         """Detailed string representation of the item."""
-        return (f"AirfocusItem(name='{self.name}', jira_key='{self.jira_key}', "
-                f"status_id='{self.status_id}', item_id='{self.item_id}')")
+        return (
+            f"AirfocusItem(name='{self.name}', jira_key='{self.jira_key}', "
+            f"status_id='{self.status_id}', item_id='{self.item_id}')"
+        )
