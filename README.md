@@ -65,9 +65,7 @@ A Python script that synchronizes JIRA issues with Airfocus workspace items.
 
 ## Setup Requirements
 
-**Required Custom Field in Airfocus:**
-- Create a **Text** field named "JIRA-KEY" in your Airfocus workspace settings
-- This prevents duplicate items during sync
+No custom fields required in Airfocus. The JIRA key is stored in the item description with a sync warning header.
 
 ## Usage
 

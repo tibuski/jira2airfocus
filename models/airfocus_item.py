@@ -8,6 +8,7 @@ encapsulating the data transformation and API payload generation logic.
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import json
+import re
 from loguru import logger
 
 import constants
@@ -91,15 +92,17 @@ class AirfocusItem:
         Returns:
             AirfocusItem instance populated with Airfocus data
         """
-        # Extract JIRA key from fields
-        fields = airfocus_data.get("fields", {})
-        jira_key_field = fields.get("JIRA-KEY", {})
-        jira_key = jira_key_field.get("value", "") if jira_key_field else ""
+        # Extract JIRA key from description (format: **JIRA Issue:** [**{key}**]({url}))
+        description = airfocus_data.get("description", "")
+        jira_key_match = re.search(
+            r"\*\*JIRA Issue:\*\*\s*\*\*\[([A-Z]+-\d+)\]\*\*", description
+        )
+        jira_key = jira_key_match.group(1) if jira_key_match else ""
 
         return cls(
             name=airfocus_data.get("name", ""),
             jira_key=jira_key,
-            description=airfocus_data.get("description", ""),
+            description=description,
             status_id=airfocus_data.get("statusId", ""),
             color=airfocus_data.get("color", "blue"),
             item_id=airfocus_data.get("id", ""),
@@ -107,10 +110,6 @@ class AirfocusItem:
             assignee_user_group_ids=airfocus_data.get("assigneeUserGroupIds", []),
             order=airfocus_data.get("order", 0),
         )
-
-    def _get_jira_key_field_id(self) -> Optional[str]:
-        """Get the JIRA-KEY field ID from field mappings."""
-        return get_airfocus_field_id("JIRA-KEY")
 
     def _get_team_field_configuration(
         self,
@@ -144,13 +143,6 @@ class AirfocusItem:
             Dictionary containing field mappings for the API
         """
         fields_dict = {}
-
-        # Add JIRA-KEY field
-        jira_key_field_id = self._get_jira_key_field_id()
-        if jira_key_field_id:
-            fields_dict[jira_key_field_id] = {"text": self.jira_key}
-        else:
-            logger.error("JIRA-KEY field ID not found")
 
         # Add team field if available
         if self.team_field_value:
@@ -221,17 +213,6 @@ class AirfocusItem:
                 {"op": "replace", "path": "/statusId", "value": self.status_id}
             )
 
-        # Update JIRA-KEY field
-        jira_key_field_id = self._get_jira_key_field_id()
-        if jira_key_field_id:
-            patch_operations.append(
-                {
-                    "op": "replace",
-                    "path": f"/fields/{jira_key_field_id}",
-                    "value": {"text": self.jira_key},
-                }
-            )
-
         # Update team field if available
         if self.team_field_value:
             field_name, team_field_id, _ = self._get_team_field_configuration()
@@ -276,11 +257,6 @@ class AirfocusItem:
 
         if not self.jira_key.strip():
             errors.append("JIRA key cannot be empty")
-
-        # Check if JIRA-KEY field exists
-        jira_key_field_id = self._get_jira_key_field_id()
-        if not jira_key_field_id:
-            errors.append("JIRA-KEY field ID not found in Airfocus field mappings")
 
         # Validate team field configuration if specified
         if self.team_field_value:

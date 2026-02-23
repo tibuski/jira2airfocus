@@ -120,24 +120,6 @@ def validate_api_response(
         return False, {"error": error_msg, "response": response.text}
 
 
-def get_field_mappings() -> Optional[str]:
-    """
-    Get JIRA field ID mappings from saved field data.
-
-    Returns:
-        str: jira_key_field_id or None if JIRA-KEY not found
-    """
-    jira_key_field_id = get_airfocus_field_id("JIRA-KEY")
-
-    if not jira_key_field_id:
-        logger.error(
-            "Could not get JIRA-KEY field ID. Make sure to fetch field data first."
-        )
-        return None
-
-    return jira_key_field_id
-
-
 def get_jira_project_data(project_key: str) -> Dict[str, Any]:
     """
     Fetch JIRA project data including issues, descriptions, status, and assignees.
@@ -384,9 +366,6 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
             if status_name and status_id:
                 field_data["status_mapping"][status_name] = status_id
 
-        # Get field ID for JIRA-KEY
-        jira_key_field_id = field_data["field_mapping"].get("JIRA-KEY")
-
         # Fetch workspace items to get field values using field names as keys
         field_values = {}
 
@@ -395,76 +374,73 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
         for field_name, field_id in field_data["field_mapping"].items():
             id_to_name_mapping[field_id] = field_name
 
-        if jira_key_field_id:
-            try:
-                # Fetch items from workspace
-                items_url = f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items/search"
-                search_payload = {
-                    "filters": {},
-                    "pagination": {"limit": 1000, "offset": 0},
-                }
+        try:
+            # Fetch items from workspace
+            items_url = (
+                f"{constants.AIRFOCUS_REST_URL}/workspaces/{workspace_id}/items/search"
+            )
+            search_payload = {
+                "filters": {},
+                "pagination": {"limit": 1000, "offset": 0},
+            }
 
-                items_response = requests.post(
-                    items_url,
-                    headers=headers,
-                    json=search_payload,
-                    verify=constants.SSL_VERIFY,
+            items_response = requests.post(
+                items_url,
+                headers=headers,
+                json=search_payload,
+                verify=constants.SSL_VERIFY,
+            )
+
+            if items_response.status_code == 200:
+                items_data = items_response.json()
+                items = items_data.get("items", [])
+
+                # Extract field values from each item, using field names as keys
+                for item in items:
+                    item_fields = item.get("fields", {})
+
+                    # Process all fields that we have mappings for
+                    for field_id, field_data_obj in item_fields.items():
+                        field_name = id_to_name_mapping.get(field_id)
+
+                        # Only process fields we recognize and have names for
+                        if field_name:
+                            # Initialize field values list if not exists
+                            if field_name not in field_values:
+                                field_values[field_name] = []
+
+                            # Extract field value (handle different field types)
+                            field_value = ""
+                            if "text" in field_data_obj:
+                                field_value = field_data_obj.get("text", "")
+                            elif "value" in field_data_obj:
+                                field_value = str(field_data_obj.get("value", ""))
+                            elif "displayValue" in field_data_obj:
+                                field_value = field_data_obj.get("displayValue", "")
+
+                            # Add unique values only
+                            if (
+                                field_value
+                                and field_value not in field_values[field_name]
+                            ):
+                                field_values[field_name].append(field_value)
+
+                # Log extracted field values
+                total_fields = len(field_values)
+
+                logger.info(
+                    "Extracted field values for {} fields from workspace items",
+                    total_fields,
                 )
 
-                if items_response.status_code == 200:
-                    items_data = items_response.json()
-                    items = items_data.get("items", [])
-
-                    # Extract field values from each item, using field names as keys
-                    for item in items:
-                        item_fields = item.get("fields", {})
-
-                        # Process all fields that we have mappings for
-                        for field_id, field_data_obj in item_fields.items():
-                            field_name = id_to_name_mapping.get(field_id)
-
-                            # Only process fields we recognize and have names for
-                            if field_name:
-                                # Initialize field values list if not exists
-                                if field_name not in field_values:
-                                    field_values[field_name] = []
-
-                                # Extract field value (handle different field types)
-                                field_value = ""
-                                if "text" in field_data_obj:
-                                    field_value = field_data_obj.get("text", "")
-                                elif "value" in field_data_obj:
-                                    field_value = str(field_data_obj.get("value", ""))
-                                elif "displayValue" in field_data_obj:
-                                    field_value = field_data_obj.get("displayValue", "")
-
-                                # Add unique values only
-                                if (
-                                    field_value
-                                    and field_value not in field_values[field_name]
-                                ):
-                                    field_values[field_name].append(field_value)
-
-                    # Log extracted values for JIRA fields specifically
-                    jira_key_count = len(field_values.get("JIRA-KEY", []))
-                    total_fields = len(field_values)
-
-                    logger.info(
-                        "Extracted field values for {} fields from workspace items",
-                        total_fields,
-                    )
-                    logger.info("JIRA-KEY: {} values", jira_key_count)
-
-                else:
-                    logger.warning(
-                        "Failed to fetch workspace items for field values. Status code: {}",
-                        items_response.status_code,
-                    )
-
-            except Exception as e:
+            else:
                 logger.warning(
-                    "Failed to fetch workspace items for field values: {}", e
+                    "Failed to fetch workspace items for field values. Status code: {}",
+                    items_response.status_code,
                 )
+
+        except Exception as e:
+            logger.warning("Failed to fetch workspace items for field values: {}", e)
 
         # Add field values to field_data
         field_data["field_values"] = field_values
@@ -492,12 +468,6 @@ def get_airfocus_field_data(workspace_id: str) -> Optional[Dict[str, Any]]:
             logger.debug(
                 "Field values extracted: {}", list(field_data["field_values"].keys())
             )
-
-            # Log specific JIRA field values if they exist
-            if "JIRA-KEY" in field_data["field_values"]:
-                logger.debug(
-                    "JIRA-KEY values: {}", field_data["field_values"]["JIRA-KEY"]
-                )
 
             return field_data
 
@@ -559,9 +529,6 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
         # Extract items from the response
         raw_items = data.get("items", [])
 
-        # Get field mapping for better readability
-        jira_key_field_id = get_airfocus_field_id("JIRA-KEY")
-
         # Extract only the needed fields from each item
         for item in raw_items:
             # Get basic item data
@@ -571,21 +538,8 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
             # Extract status information
             status_id = item.get("statusId", "")
 
-            # Extract custom fields and transform them for better readability
+            # Extract custom fields
             raw_fields = item.get("fields", {})
-            transformed_fields = {}
-
-            # Process each field and make JIRA fields more readable
-            for field_id, field_data in raw_fields.items():
-                if field_id == jira_key_field_id:
-                    # Transform JIRA-KEY field
-                    transformed_fields["JIRA-KEY"] = {
-                        "id": field_id,
-                        "value": field_data.get("text", ""),
-                    }
-                else:
-                    # Keep other fields as they are
-                    transformed_fields[field_id] = field_data
 
             # Create simplified item object with only needed data
             simplified_item = {
@@ -597,7 +551,7 @@ def get_airfocus_project_data(workspace_id: str) -> Dict[str, Any]:
                 "archived": item.get("archived", False),
                 "createdAt": item.get("createdAt", ""),
                 "lastUpdatedAt": item.get("lastUpdatedAt", ""),
-                "fields": transformed_fields,
+                "fields": raw_fields,
             }
 
             logger.debug("Processed Airfocus item: {} (ID: {})", item_name, item_id)
@@ -922,13 +876,9 @@ def _load_and_prepare_sync_data(
     airfocus_by_jira_key = {}
 
     for item_data in airfocus_items:
-        fields = item_data.get("fields", {})
-        jira_key_field = fields.get("JIRA-KEY", {})
-        if jira_key_field and "value" in jira_key_field:
-            jira_key = jira_key_field["value"]
-            if jira_key:
-                airfocus_item = AirfocusItem.from_airfocus_data(item_data)
-                airfocus_by_jira_key[jira_key] = airfocus_item
+        airfocus_item = AirfocusItem.from_airfocus_data(item_data)
+        if airfocus_item.jira_key:
+            airfocus_by_jira_key[airfocus_item.jira_key] = airfocus_item
 
     logger.info(
         "Starting synchronization of {} JIRA issues to Airfocus workspace {}",
@@ -1175,15 +1125,30 @@ def main() -> None:
 
     # Get Airfocus field data and save to file
     logger.info("Fetching Airfocus field data...")
-    get_airfocus_field_data(constants.AIRFOCUS_WORKSPACE_ID)
+    field_data = get_airfocus_field_data(constants.AIRFOCUS_WORKSPACE_ID)
+    if field_data is None:
+        logger.error(
+            "Failed to fetch Airfocus field data. Check your API key and try again."
+        )
+        sys.exit(1)
 
     # Get Jira project data and save to file
     logger.info("Fetching JIRA project data...")
-    get_jira_project_data(constants.JIRA_PROJECT_KEY)
+    jira_data = get_jira_project_data(constants.JIRA_PROJECT_KEY)
+    if jira_data is None:
+        logger.error(
+            "Failed to fetch JIRA project data. Check your JIRA PAT and try again."
+        )
+        sys.exit(1)
 
     # Get Airfocus project data and save to file
     logger.info("Fetching Airfocus project data...")
-    get_airfocus_project_data(constants.AIRFOCUS_WORKSPACE_ID)
+    airfocus_data = get_airfocus_project_data(constants.AIRFOCUS_WORKSPACE_ID)
+    if airfocus_data is None:
+        logger.error(
+            "Failed to fetch Airfocus project data. Check your API key and try again."
+        )
+        sys.exit(1)
 
     # Create items in Airfocus
     sync_jira_to_airfocus(
