@@ -16,7 +16,19 @@ from typing import Dict, List, Tuple, Optional, Any
 
 from loguru import logger
 
-import constants
+try:
+    import constants
+except ModuleNotFoundError:
+    print("Error: 'constants.py' not found.")
+    print("")
+    print("The project requires a 'constants.py' file with your API credentials.")
+    print("A template example exists at: constants.py.example")
+    print("")
+    print("To fix this:")
+    print("  1. Copy the example file: cp constants.py.example constants.py")
+    print("  2. Edit constants.py and fill in your JIRA and Airfocus credentials")
+    print("")
+    sys.exit(1)
 from models import (
     AirfocusItem,
     JiraItem,

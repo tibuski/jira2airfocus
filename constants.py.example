@@ -1,59 +1,37 @@
+# =============================================================================
 # JIRA Configuration
-# Update this URL to match your JIRA instance
-# Format: https://your-jira-instance.com/rest/api/latest
-# Documentation: https://developer.atlassian.com/server/jira/platform/rest/v11001/intro/#gettingstarted
+# =============================================================================
+
 JIRA_REST_URL = "https://your-jira-instance.com/rest/api/latest"
-
-# Airfocus Configuration  
-# This URL typically stays the same for all Airfocus instances
-# Documentation: https://developer.airfocus.com/endpoints.html#/Items
-AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
-
-# Logging Configuration
-# Available levels: DEBUG, INFO, WARNING, ERROR
-# DEBUG - Detailed information for troubleshooting
-# INFO - General information about script execution (recommended)
-# WARNING - Only warning and error messages
-# ERROR - Only error messages
-LOGGING_LEVEL = "WARNING"
-
-# Log file path configuration
-# Path where the application log file will be stored
-LOG_FILE_PATH = "data/jira2airfocus.log"
-
-# SSL Verification Configuration
-# Set to True to enable SSL certificate verification (recommended for production)
-# Set to False to disable SSL verification (may be needed for self-signed certificates)
-SSL_VERIFY = False
-
-# JIRA Project Configuration
-# The project key of the JIRA project you want to sync
 JIRA_PROJECT_KEY = "YOUR_PROJECT_KEY"
+JIRA_PAT = "your-jira-personal-access-token-here"
 
-# Airfocus Workspace Configuration
-# Your Airfocus workspace ID (found in the workspace URL)
-# Example: https://app.airfocus.com/workspaces/YOUR-WORKSPACE-ID/items
+# =============================================================================
+# Airfocus Configuration
+# =============================================================================
+
+AIRFOCUS_REST_URL = "https://app.airfocus.com/api"
 AIRFOCUS_WORKSPACE_ID = "your-workspace-id-here"
+AIRFOCUS_API_KEY = "your-airfocus-api-key-here"
 
-# Status Mapping Configuration
-# Maps JIRA statuses to Airfocus statuses when exact matches aren't found
-# Example: 
-# "Airfocus Status name": ["JIRA Status 1", "JIRA Status 2"]
-# CASE SENSITIVE !
+# =============================================================================
+# Sync Options
+# =============================================================================
+
 JIRA_TO_AIRFOCUS_STATUS_MAPPING = {
-    "Draft": ["To Do","Open"],
-    "In Progress": ["In Progress","IN REFINEMENT"],
+    "Draft": ["To Do", "Open"],
+    "In Progress": ["In Progress", "IN REFINEMENT"],
     "Done": ["Done", "Cancelled"],
     "On Hold": ["On hold"]
 }
 
-# Team field will be set when creating items in Airfocus
-# Key: Airfocus field name (must be a select field in your workspace)
-# Value: List of team values to assign (first value will be used)
-# Example: {"Team": ["Alpha Team"]} will set the "Team" field to "Alpha Team"
 TEAM_FIELD = {"YOUR_TEAM_FIELD_NAME": ["YOUR_TEAM_VALUE"]}
 
-# Authentication Credentials
-# Update these with your actual credentials
-JIRA_PAT = "your-jira-personal-access-token-here"
-AIRFOCUS_API_KEY = "your-airfocus-api-key-here"
+# =============================================================================
+# General Settings
+# =============================================================================
+
+DATA_DIR = "data"
+LOG_FILE_PATH = "data/jira2airfocus.log"
+LOGGING_LEVEL = "WARNING"
+SSL_VERIFY = False
