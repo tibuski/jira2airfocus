@@ -93,6 +93,17 @@ def validate_constants() -> List[str]:
     if not constants.AIRFOCUS_API_KEY or constants.AIRFOCUS_API_KEY == placeholder_af:
         errors.append("AIRFOCUS_API_KEY is not set (found placeholder value)")
 
+    # Check TEAM_FIELD configuration
+    if constants.TEAM_FIELD:
+        placeholder_team_field = "YOUR_TEAM_FIELD_NAME"
+        for field_name in constants.TEAM_FIELD.keys():
+            if field_name == placeholder_team_field:
+                errors.append(
+                    f"TEAM_FIELD has placeholder value '{field_name}'. "
+                    "Either set it to an empty dict (TEAM_FIELD = {{}}) or configure an existing Airfocus team field."
+                )
+                break
+
     return errors
 
 

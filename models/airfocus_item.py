@@ -92,17 +92,47 @@ class AirfocusItem:
         Returns:
             AirfocusItem instance populated with Airfocus data
         """
-        # Extract JIRA key from description (format: **JIRA Issue:** [**{key}**]({url}))
-        description = airfocus_data.get("description", "")
-        jira_key_match = re.search(
-            r"\*\*JIRA Issue:\*\*\s*\*\*\[([A-Z]+-\d+)\]\*\*", description
-        )
+        # Extract JIRA key from description (format: * JIRA Issue: {key})
+        description_raw = airfocus_data.get("description", "")
+        if isinstance(description_raw, dict):
+            blocks = description_raw.get("blocks", [])
+
+            def extract_all_text(obj):
+                texts = []
+                if isinstance(obj, dict):
+                    if obj.get("type") == "text":
+                        texts.append(obj.get("content", ""))
+                    else:
+                        for value in obj.values():
+                            texts.extend(extract_all_text(value))
+                elif isinstance(obj, list):
+                    for item in obj:
+                        texts.extend(extract_all_text(item))
+                return texts
+
+            description_text = "".join(extract_all_text(blocks))
+        else:
+            description_text = str(description_raw) if description_raw else ""
+
+        jira_key_match = re.search(r"([A-Z]{2,10}-\d{1,3})", description_text)
         jira_key = jira_key_match.group(1) if jira_key_match else ""
+
+        if jira_key:
+            logger.debug(
+                "Extracted JIRA key: {} from description: {}",
+                jira_key,
+                description_text[:50],
+            )
+        elif description_text:
+            logger.debug(
+                "Could not extract JIRA key from description: {}",
+                description_text[:100],
+            )
 
         return cls(
             name=airfocus_data.get("name", ""),
             jira_key=jira_key,
-            description=description,
+            description=description_text,
             status_id=airfocus_data.get("statusId", ""),
             color=airfocus_data.get("color", "blue"),
             item_id=airfocus_data.get("id", ""),

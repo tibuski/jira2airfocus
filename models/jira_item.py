@@ -169,7 +169,7 @@ class JiraItem:
 
         return cls(
             key=issue_key,
-            url=f"{base_url}/projects/{project_key}/issues/{issue_key}",
+            url=f"{base_url}/browse/{issue_key}",
             summary=fields.get("summary", ""),
             description=fields.get("description", ""),
             status=status,
@@ -237,45 +237,34 @@ class JiraItem:
         """
         markdown_parts = []
 
-        # Add sync warning
-        markdown_parts.append("---- Do Not Edit, Used for Sync ----\n")
+        # Add sync warning in italic
+        markdown_parts.append("*---------- Do Not Edit, Used for Sync ----------*")
 
-        # Add JIRA Issue link
-        markdown_parts.append(f"**JIRA Issue:** [**{self.key}**]({self.url})")
+        # Add JIRA Issue with link
+        markdown_parts.append(f"**JIRA Issue:** [{self.key}]({self.url})")
+
+        # Add JIRA Description URL as link
+        markdown_parts.append(f"**JIRA Description:** [{self.url}]({self.url})")
 
         # Add assignee if available
         if self.assignee and self.assignee.display_name:
             assignee_text = self.assignee.to_markdown()
             markdown_parts.append(f"**JIRA Assignee:** {assignee_text}")
 
-        # Add description
-        jira_description = (
-            self.description if self.description else "No description provided in JIRA."
-        )
-        markdown_parts.append(f"**JIRA Description:**\n\n{jira_description}")
-
         # Add attachments if there are any
         if self.attachments:
             valid_attachments = [att for att in self.attachments if att.is_valid()]
-            invalid_attachments = [
-                att for att in self.attachments if not att.is_valid()
-            ]
-
             if valid_attachments:
                 markdown_parts.append("**JIRA Attachments:**")
                 for attachment in valid_attachments:
-                    markdown_parts.append(attachment.to_markdown())
+                    markdown_parts.append(
+                        f"- [{attachment.filename}]({attachment.url})"
+                    )
 
-            # Log warning for invalid attachments
-            if invalid_attachments:
-                logger.warning(
-                    "JIRA issue {} has {} invalid attachments: {}",
-                    self.key,
-                    len(invalid_attachments),
-                    [str(att) for att in invalid_attachments],
-                )
+        # Add closing separator in italic (just dashes)
+        markdown_parts.append("*---------------------------------------------------*")
 
-        return "\n\n".join(markdown_parts)
+        return "\n".join(markdown_parts)
 
     def get_status_name(self) -> str:
         """Get the status name, or empty string if no status."""
